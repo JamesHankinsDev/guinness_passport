@@ -44,5 +44,9 @@ export function usePints(uid: string | undefined) {
     setPints((prev) => [pint, ...prev]);
   }, []);
 
-  return { pints, loading, hasMore, loadMore, refresh, addOptimistic };
+  const updateOptimistic = useCallback((updated: Pint) => {
+    setPints((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+  }, []);
+
+  return { pints, loading, hasMore, loadMore, refresh, addOptimistic, updateOptimistic };
 }

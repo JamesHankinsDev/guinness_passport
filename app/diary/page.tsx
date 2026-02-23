@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useCallback } from 'react';
+import type { Pint } from '@/types';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
@@ -11,7 +12,6 @@ import { BottomNav } from '@/components/layout/BottomNav';
 import { PintCard } from '@/components/pint/PintCard';
 import { Button } from '@/components/ui/Button';
 import { PintCardSkeleton } from '@/components/ui/Skeleton';
-import type { Metadata } from 'next';
 
 function StatsStrip({ total, pubs, avg }: { total: number; pubs: number; avg: number }) {
   return (
@@ -37,7 +37,7 @@ function StatsStrip({ total, pubs, avg }: { total: number; pubs: number; avg: nu
 export default function DiaryPage() {
   const { firebaseUser, userDoc } = useAuth();
   const uid = firebaseUser?.uid;
-  const { pints, loading, hasMore, loadMore, refresh } = usePints(uid);
+  const { pints, loading, hasMore, loadMore, refresh, updateOptimistic } = usePints(uid);
 
   useEffect(() => {
     if (uid) refresh();
@@ -89,7 +89,13 @@ export default function DiaryPage() {
           ) : (
             <div className="space-y-4">
               {pints.map((pint, i) => (
-                <PintCard key={pint.id} pint={pint} index={i} />
+                <PintCard
+                  key={pint.id}
+                  pint={pint}
+                  uid={uid}
+                  index={i}
+                  onUpdated={(updated: Pint) => updateOptimistic(updated)}
+                />
               ))}
 
               {hasMore && (

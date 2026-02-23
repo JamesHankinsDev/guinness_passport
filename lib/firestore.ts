@@ -121,6 +121,41 @@ export async function getAllPints(uid: string): Promise<Pint[]> {
   return snap.docs.map(pintFromSnap);
 }
 
+export interface PintEditFields {
+  pubName: string;
+  address: string;
+  placeId: string;
+  lat: number;
+  lng: number;
+  rating: number;
+  tags: string[];
+  note: string;
+}
+
+export async function updatePint(pintId: string, uid: string, fields: PintEditFields) {
+  const pintRef = doc(db, 'pints', pintId);
+  const pintSnap = await getDoc(pintRef);
+  if (!pintSnap.exists() || pintSnap.data().userId !== uid) {
+    throw new Error('Unauthorized');
+  }
+
+  const oldRating = pintSnap.data().rating as number;
+  await updateDoc(pintRef, fields as unknown as Record<string, unknown>);
+
+  // Re-compute avgRating on the user doc if rating changed
+  if (oldRating !== fields.rating) {
+    const allPints = await getAllPints(uid);
+    if (allPints.length > 0) {
+      const newAvg =
+        allPints.reduce((sum, p) => sum + (p.id === pintId ? fields.rating : p.rating), 0) /
+        allPints.length;
+      await updateDoc(doc(db, 'users', uid), {
+        avgRating: Math.round(newAvg * 10) / 10,
+      });
+    }
+  }
+}
+
 export async function deletePint(pintId: string, uid: string) {
   const pintRef = doc(db, 'pints', pintId);
   const pintSnap = await getDoc(pintRef);
