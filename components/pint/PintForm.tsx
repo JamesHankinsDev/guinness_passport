@@ -1,20 +1,21 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useGeolocation } from '@/hooks/useGeolocation';
-import { addPint } from '@/lib/firestore';
+import { addPint, getFriends } from '@/lib/firestore';
 import { uploadPintPhoto } from '@/lib/storage';
 import { searchNearbyPubs, searchPubsByText, PlaceResult } from '@/lib/places';
 import { ALL_TAGS, PintFormData } from '@/types';
+import type { User } from '@/types';
 import { Button } from '@/components/ui/Button';
 import { StarRating } from '@/components/ui/StarRating';
 import { TagPill } from '@/components/ui/TagPill';
 
-const STEPS = ['Location', 'Rating', 'Tags', 'Note', 'Photo'] as const;
+const STEPS = ['Location', 'Rating', 'Tags', 'Friends', 'Note', 'Photo'] as const;
 type Step = typeof STEPS[number];
 
 // Prevent Enter key from bubbling up and triggering any button outside the input
@@ -36,6 +37,12 @@ export function PintForm() {
   const [manualOpen, setManualOpen] = useState(false);
   const [manualName, setManualName] = useState('');
   const [manualAddress, setManualAddress] = useState('');
+  const [friends, setFriends] = useState<User[]>([]);
+
+  useEffect(() => {
+    if (!firebaseUser?.uid) return;
+    getFriends(firebaseUser.uid).then(setFriends).catch(() => {});
+  }, [firebaseUser?.uid]);
 
   const [form, setForm] = useState<PintFormData>({
     pubName: '',
@@ -46,6 +53,7 @@ export function PintForm() {
     rating: 3,
     tags: [],
     note: '',
+    withFriends: [],
   });
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -138,6 +146,10 @@ export function PintForm() {
 
       setStampVisible(true);
       toast.success('Pint logged! 🍺');
+
+      // Celebrate any newly awarded badges (refreshUserDoc gives updated badges)
+      // Badge toasts are fired in addPint → checkAndAwardPintBadges internally,
+      // but we surface them here via a brief delay
       setTimeout(() => {
         router.replace('/diary');
       }, 1800);
@@ -383,7 +395,77 @@ export function PintForm() {
           </motion.div>
         )}
 
-        {/* Step 4: Note */}
+        {/* Step 4: Friends */}
+        {step === 'Friends' && (
+          <motion.div key="friends" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
+            <div>
+              <h2 className="font-display text-xl text-cream mb-1">Who&apos;s with you?</h2>
+              <p className="text-cream/40 font-mono text-xs">Tag friends who are having this pint with you</p>
+            </div>
+
+            {friends.length === 0 ? (
+              <div className="text-center py-8 space-y-3">
+                <p className="text-3xl">🤝</p>
+                <p className="font-mono text-cream/40 text-xs">No friends connected yet</p>
+                <p className="font-mono text-cream/20 text-xs">
+                  Share your QR code from the Profile page to connect with friends
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {friends.map((f) => {
+                  const selected = (form.withFriends ?? []).includes(f.uid);
+                  return (
+                    <button
+                      key={f.uid}
+                      type="button"
+                      onClick={() =>
+                        setForm((prev) => ({
+                          ...prev,
+                          withFriends: selected
+                            ? (prev.withFriends ?? []).filter((id) => id !== f.uid)
+                            : [...(prev.withFriends ?? []), f.uid],
+                        }))
+                      }
+                      className={`w-full flex items-center gap-3 rounded-xl px-4 py-3 border transition-colors ${
+                        selected
+                          ? 'bg-gold/10 border-gold/40'
+                          : 'bg-white/5 border-white/10 hover:border-white/20'
+                      }`}
+                    >
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border ${selected ? 'bg-gold/20 border-gold/40' : 'bg-white/10 border-white/10'}`}>
+                        {f.photoURL ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={f.photoURL} alt="" className="w-full h-full rounded-full object-cover" />
+                        ) : (
+                          <span className="font-display text-sm" style={{ color: selected ? '#c9a84c' : '#f5f0e8' }}>
+                            {(f.displayName ?? 'G')[0].toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <span className={`font-display text-sm ${selected ? 'text-gold' : 'text-cream'}`}>
+                        {f.displayName}
+                      </span>
+                      {selected && (
+                        <svg className="w-4 h-4 text-gold ml-auto" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {(form.withFriends ?? []).length > 0 && (
+              <p className="font-mono text-gold/70 text-xs text-center">
+                {form.withFriends!.length} friend{form.withFriends!.length !== 1 ? 's' : ''} tagged — you may earn a badge!
+              </p>
+            )}
+          </motion.div>
+        )}
+
+        {/* Step 5: Note */}
         {step === 'Note' && (
           <motion.div key="note" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
             <div>

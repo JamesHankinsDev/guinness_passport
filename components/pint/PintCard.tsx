@@ -12,6 +12,7 @@ interface PintCardProps {
   uid?: string;
   index?: number;
   onUpdated?: (updated: Pint) => void;
+  friendsMap?: Record<string, string>; // uid → displayName
 }
 
 function formatDate(pint: Pint): string {
@@ -25,7 +26,7 @@ function formatDate(pint: Pint): string {
   }).format(date);
 }
 
-export function PintCard({ pint: initialPint, uid, index = 0, onUpdated }: PintCardProps) {
+export function PintCard({ pint: initialPint, uid, index = 0, onUpdated, friendsMap = {} }: PintCardProps) {
   const [pint, setPint] = useState(initialPint);
   const [editOpen, setEditOpen] = useState(false);
 
@@ -33,6 +34,10 @@ export function PintCard({ pint: initialPint, uid, index = 0, onUpdated }: PintC
     setPint(updated);
     onUpdated?.(updated);
   };
+
+  const taggedFriends = (pint.withFriends ?? [])
+    .map((id) => friendsMap[id])
+    .filter(Boolean) as string[];
 
   return (
     <>
@@ -84,6 +89,19 @@ export function PintCard({ pint: initialPint, uid, index = 0, onUpdated }: PintC
               {pint.tags.map((tag) => (
                 <TagPill key={tag} label={tag} selected size="sm" />
               ))}
+            </div>
+          )}
+
+          {/* Tagged friends */}
+          {taggedFriends.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <svg className="w-3 h-3 text-gold/60 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+              </svg>
+              <p className="font-mono text-gold/60 text-[10px]">
+                With {taggedFriends.slice(0, 2).join(', ')}
+                {taggedFriends.length > 2 && ` + ${taggedFriends.length - 2} more`}
+              </p>
             </div>
           )}
 

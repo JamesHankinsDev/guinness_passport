@@ -14,11 +14,12 @@ import {
   startAfter,
   serverTimestamp,
   increment,
+  arrayUnion,
   DocumentSnapshot,
   QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Pint, User, PintFormData, Stats } from '@/types';
+import { Pint, User, PintFormData, Stats, BadgeId, Badge } from '@/types';
 
 // ─── User helpers ─────────────────────────────────────────────────────────────
 
@@ -27,6 +28,9 @@ export async function createUserDoc(uid: string, data: Partial<User>) {
     ...data,
     totalPints: 0,
     avgRating: 0,
+    socialPints: 0,
+    friendIds: [],
+    badges: [],
     createdAt: serverTimestamp(),
   });
 }
@@ -52,6 +56,8 @@ export async function addPint(
   formData: PintFormData,
   photoUrl?: string
 ): Promise<string> {
+  const hasFriends = (formData.withFriends ?? []).length > 0;
+
   const pintData = {
     userId: uid,
     pubName: formData.pubName,
@@ -63,6 +69,7 @@ export async function addPint(
     tags: formData.tags,
     note: formData.note,
     photoUrl: photoUrl ?? '',
+    withFriends: formData.withFriends ?? [],
     createdAt: serverTimestamp(),
   };
 
@@ -76,10 +83,28 @@ export async function addPint(
     const newTotal = (userData.totalPints || 0) + 1;
     const newAvg =
       ((userData.avgRating || 0) * (userData.totalPints || 0) + formData.rating) / newTotal;
-    await updateDoc(userRef, {
+    const update: Record<string, unknown> = {
       totalPints: increment(1),
       avgRating: Math.round(newAvg * 10) / 10,
-    });
+    };
+    if (hasFriends) {
+      update.socialPints = increment(1);
+    }
+    await updateDoc(userRef, update);
+  }
+
+  // Award pint-related badges if friends were tagged
+  if (hasFriends) {
+    const freshSnap = await getDoc(userRef);
+    if (freshSnap.exists()) {
+      const freshData = freshSnap.data() as User;
+      await checkAndAwardPintBadges(
+        uid,
+        { ...pintData, id: ref.id } as Pint,
+        freshData.socialPints ?? 1,
+        freshData.badges ?? []
+      );
+    }
   }
 
   return ref.id;
@@ -232,4 +257,160 @@ export async function computeStats(uid: string): Promise<Stats> {
     ratingDistribution: ratingDist,
     dayOfWeekDistribution: dayDist,
   };
+}
+
+// ─── Friends ──────────────────────────────────────────────────────────────────
+
+/** Adds a mutual friendship between myUid and friendUid. */
+export async function addFriend(myUid: string, friendUid: string): Promise<BadgeId[]> {
+  if (myUid === friendUid) throw new Error('Cannot add yourself');
+
+  const myRef = doc(db, 'users', myUid);
+  const friendRef = doc(db, 'users', friendUid);
+
+  // Own-doc write (always allowed)
+  await updateDoc(myRef, { friendIds: arrayUnion(friendUid) });
+  // Other-doc write (allowed by Firestore rule: self-UID append only)
+  await updateDoc(friendRef, { friendIds: arrayUnion(myUid) });
+
+  // Award badges for both parties
+  const mySnap = await getDoc(myRef);
+  const myData = mySnap.data() as User;
+  const earnedBadges = await checkAndAwardFriendBadges(myUid, myData);
+
+  // Award friend's badges (fire-and-forget)
+  const friendSnap = await getDoc(friendRef);
+  checkAndAwardFriendBadges(friendUid, friendSnap.data() as User).catch(() => {});
+
+  return earnedBadges;
+}
+
+/** Fetches User docs for all of uid's friends. */
+export async function getFriends(uid: string): Promise<User[]> {
+  const userSnap = await getDoc(doc(db, 'users', uid));
+  if (!userSnap.exists()) return [];
+  const friendIds: string[] = userSnap.data().friendIds ?? [];
+  if (friendIds.length === 0) return [];
+
+  const results = await Promise.all(
+    friendIds.map((fid) => getDoc(doc(db, 'users', fid)))
+  );
+  return results
+    .filter((s) => s.exists())
+    .map((s) => ({ uid: s.id, ...s.data() } as User));
+}
+
+/** Paginated fetch of pints from a list of friend UIDs. */
+export async function getFriendsPints(
+  friendIds: string[],
+  pageSize = 10,
+  lastDoc?: QueryDocumentSnapshot
+): Promise<{ pints: Pint[]; lastDoc: QueryDocumentSnapshot | null; hasMore: boolean }> {
+  if (friendIds.length === 0) return { pints: [], lastDoc: null, hasMore: false };
+
+  const ids = friendIds.slice(0, 30);
+
+  let q = query(
+    collection(db, 'pints'),
+    where('userId', 'in', ids),
+    orderBy('createdAt', 'desc'),
+    limit(pageSize)
+  );
+  if (lastDoc) {
+    q = query(
+      collection(db, 'pints'),
+      where('userId', 'in', ids),
+      orderBy('createdAt', 'desc'),
+      startAfter(lastDoc),
+      limit(pageSize)
+    );
+  }
+
+  const snap = await getDocs(q);
+  return {
+    pints: snap.docs.map(pintFromSnap),
+    lastDoc: snap.docs[snap.docs.length - 1] ?? null,
+    hasMore: snap.docs.length === pageSize,
+  };
+}
+
+/** Fetches all pints from a list of friend UIDs (for map view). */
+export async function getAllFriendsPints(friendIds: string[]): Promise<Pint[]> {
+  if (friendIds.length === 0) return [];
+
+  // Batch into groups of 30 (Firestore 'in' limit)
+  const batches: Pint[][] = [];
+  for (let i = 0; i < friendIds.length; i += 30) {
+    const ids = friendIds.slice(i, i + 30);
+    const q = query(
+      collection(db, 'pints'),
+      where('userId', 'in', ids),
+      orderBy('createdAt', 'desc')
+    );
+    const snap = await getDocs(q);
+    batches.push(snap.docs.map(pintFromSnap));
+  }
+
+  return batches.flat().sort(
+    (a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0)
+  );
+}
+
+// ─── Badges ───────────────────────────────────────────────────────────────────
+
+/** Badge shape used only at write time (earnedAt is a FieldValue sentinel). */
+type BadgeWrite = { id: BadgeId; earnedAt: ReturnType<typeof serverTimestamp> };
+
+async function awardBadges(uid: string, newBadges: BadgeWrite[]) {
+  if (newBadges.length === 0) return;
+  await updateDoc(doc(db, 'users', uid), {
+    badges: arrayUnion(...newBadges),
+  });
+}
+
+/** Check and award friend-connection badges. Returns newly awarded badge IDs. */
+export async function checkAndAwardFriendBadges(
+  uid: string,
+  userData: Partial<User>
+): Promise<BadgeId[]> {
+  const existingIds = (userData.badges ?? []).map((b) => b.id);
+  const friendCount = (userData.friendIds ?? []).length;
+  const newBadges: BadgeWrite[] = [];
+
+  if (friendCount >= 1 && !existingIds.includes('first_friend')) {
+    newBadges.push({ id: 'first_friend', earnedAt: serverTimestamp() });
+  }
+  if (friendCount >= 5 && !existingIds.includes('social_butterfly')) {
+    newBadges.push({ id: 'social_butterfly', earnedAt: serverTimestamp() });
+  }
+
+  await awardBadges(uid, newBadges);
+  return newBadges.map((b) => b.id);
+}
+
+/** Check and award pint-social badges. Returns newly awarded badge IDs. */
+export async function checkAndAwardPintBadges(
+  uid: string,
+  pint: Pint,
+  socialPintsCount: number,
+  existingBadges: Badge[]
+): Promise<BadgeId[]> {
+  const existingIds = existingBadges.map((b) => b.id);
+  const newBadges: BadgeWrite[] = [];
+
+  if (socialPintsCount >= 1 && !existingIds.includes('social_pint')) {
+    newBadges.push({ id: 'social_pint', earnedAt: serverTimestamp() });
+  }
+  if ((pint.withFriends?.length ?? 0) >= 3 && !existingIds.includes('round_buyer')) {
+    newBadges.push({ id: 'round_buyer', earnedAt: serverTimestamp() });
+  }
+  if (socialPintsCount >= 5 && !existingIds.includes('pub_crawlers')) {
+    newBadges.push({ id: 'pub_crawlers', earnedAt: serverTimestamp() });
+  }
+  if (socialPintsCount >= 10 && !existingIds.includes('the_regular')) {
+    newBadges.push({ id: 'the_regular', earnedAt: serverTimestamp() });
+  }
+
+  await awardBadges(uid, newBadges);
+  return newBadges.map((b) => b.id);
 }

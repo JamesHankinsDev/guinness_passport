@@ -7,6 +7,8 @@ import { Pint } from '@/types';
 interface PintMapProps {
   pints: Pint[];
   onPintSelect?: (pint: Pint) => void;
+  /** When true, markers render in a lighter cream colour to indicate friend pints. */
+  friendMode?: boolean;
 }
 
 /** A pint has valid coordinates if it's not sitting at 0,0 (the Atlantic null-island). */
@@ -14,7 +16,7 @@ function hasCoords(p: Pint) {
   return Math.abs(p.lat) > 0.001 || Math.abs(p.lng) > 0.001;
 }
 
-export function PintMap({ pints, onPintSelect }: PintMapProps) {
+export function PintMap({ pints, onPintSelect, friendMode = false }: PintMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<unknown>(null);
   const [mapboxError, setMapboxError] = useState<string | null>(null);
@@ -58,6 +60,8 @@ export function PintMap({ pints, onPintSelect }: PintMapProps) {
           map.resize();
 
           // Only plot pints with valid coordinates
+          const pinColor = friendMode ? '#c8c4b8' : '#c9a84c';
+          const pinShadow = friendMode ? 'rgba(200,196,184,0.35)' : 'rgba(201,168,76,0.4)';
           mappable.forEach((pint) => {
             const el = document.createElement('div');
             el.className = 'custom-pin';
@@ -65,11 +69,11 @@ export function PintMap({ pints, onPintSelect }: PintMapProps) {
               width: 32px;
               height: 32px;
               border-radius: 50% 50% 50% 0;
-              background: #c9a84c;
+              background: ${pinColor};
               border: 2px solid #0a0a0a;
               transform: rotate(-45deg);
               cursor: pointer;
-              box-shadow: 0 2px 8px rgba(201,168,76,0.4);
+              box-shadow: 0 2px 8px ${pinShadow};
               position: relative;
             `;
 

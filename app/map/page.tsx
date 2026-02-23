@@ -3,59 +3,100 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
-import { getAllPints } from '@/lib/firestore';
+import { getAllPints, getAllFriendsPints, getFriends } from '@/lib/firestore';
 import { AuthGuard } from '@/components/layout/AuthGuard';
 import { TopBar } from '@/components/layout/TopBar';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { PintMap } from '@/components/pint/PintMap';
 import { StarRating } from '@/components/ui/StarRating';
 import { TagPill } from '@/components/ui/TagPill';
-import type { Pint } from '@/types';
+import type { Pint, User } from '@/types';
+
+type MapTab = 'mine' | 'friends';
 
 export default function MapPage() {
-  const { firebaseUser } = useAuth();
-  const [pints, setPints] = useState<Pint[]>([]);
+  const { firebaseUser, userDoc } = useAuth();
+  const [myPints, setMyPints] = useState<Pint[]>([]);
+  const [friendsPints, setFriendsPints] = useState<Pint[]>([]);
+  const [friends, setFriends] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Pint | null>(null);
+  const [tab, setTab] = useState<MapTab>('mine');
 
   useEffect(() => {
     if (!firebaseUser) return;
     getAllPints(firebaseUser.uid)
-      .then(setPints)
+      .then(setMyPints)
       .finally(() => setLoading(false));
   }, [firebaseUser]);
 
+  useEffect(() => {
+    if (!firebaseUser?.uid) return;
+    getFriends(firebaseUser.uid).then(setFriends).catch(() => {});
+  }, [firebaseUser?.uid, userDoc?.friendIds?.length]);
+
+  // Load friends pints lazily when tab switches
+  useEffect(() => {
+    if (tab !== 'friends' || friends.length === 0 || friendsPints.length > 0) return;
+    setLoading(true);
+    const friendIds = friends.map((f) => f.uid);
+    getAllFriendsPints(friendIds)
+      .then(setFriendsPints)
+      .finally(() => setLoading(false));
+  }, [tab, friends, friendsPints.length]);
+
+  const hasFriends = (userDoc?.friendIds?.length ?? 0) > 0;
+  const activePints = tab === 'mine' ? myPints : friendsPints;
+  const friendsMap = Object.fromEntries(friends.map((f) => [f.uid, f.displayName]));
+
   return (
     <AuthGuard>
-      {/*
-        Outer shell: fixed full-screen so the map always has a
-        pixel-perfect, non-scrolling container. TopBar and BottomNav
-        float on top via their own fixed positioning.
-      */}
       <div className="fixed inset-0 bg-black">
         <TopBar />
 
-        {/* Map canvas: fills from below TopBar (56px) to bottom of screen.
-            BottomNav (mobile) floats over the map — the pint-count pill
-            and pin cards are offset accordingly so they stay visible. */}
         <div className="absolute inset-0 top-14">
           {loading ? (
             <div className="w-full h-full bg-[#111] flex items-center justify-center">
               <div className="w-8 h-8 border-2 border-gold/30 border-t-gold rounded-full animate-spin" />
             </div>
           ) : (
-            <PintMap pints={pints} onPintSelect={setSelected} />
+            <PintMap
+              key={tab}
+              pints={activePints}
+              onPintSelect={setSelected}
+              friendMode={tab === 'friends'}
+            />
           )}
 
-          {/* Pint count pill */}
-          <div className="absolute top-3 left-3 bg-black/80 backdrop-blur border border-white/10 rounded-full px-3 py-1.5 flex items-center gap-2 z-10">
-            <div className="w-2 h-2 rounded-full bg-gold animate-pulse" />
-            <span className="font-mono text-cream/70 text-xs">
-              {pints.length} pint{pints.length !== 1 ? 's' : ''} logged
-            </span>
+          {/* Pint count + optional filter toggle */}
+          <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
+            <div className="bg-black/80 backdrop-blur border border-white/10 rounded-full px-3 py-1.5 flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full animate-pulse ${tab === 'friends' ? 'bg-cream/60' : 'bg-gold'}`} />
+              <span className="font-mono text-cream/70 text-xs">
+                {activePints.length} pint{activePints.length !== 1 ? 's' : ''}
+                {tab === 'friends' ? ' from friends' : ' logged'}
+              </span>
+            </div>
+
+            {hasFriends && (
+              <div className="flex gap-1 bg-black/80 backdrop-blur border border-white/10 rounded-full p-1">
+                {(['mine', 'friends'] as MapTab[]).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => { setSelected(null); setTab(t); }}
+                    className={`px-3 py-1 rounded-full font-mono text-[10px] tracking-wide transition-colors ${
+                      tab === t ? 'bg-gold text-black' : 'text-cream/50 hover:text-cream/70'
+                    }`}
+                  >
+                    {t === 'mine' ? 'Mine' : 'Friends'}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Selected pint card — sits above the BottomNav on mobile */}
+          {/* Selected pint card */}
           <AnimatePresence>
             {selected && (
               <motion.div
@@ -75,6 +116,12 @@ export default function MapPage() {
                   </svg>
                 </button>
                 <div className="space-y-2 pr-6">
+                  {/* Friend attribution */}
+                  {tab === 'friends' && friendsMap[selected.userId] && (
+                    <p className="font-mono text-cream/30 text-[10px] tracking-wide">
+                      {friendsMap[selected.userId]}
+                    </p>
+                  )}
                   <div>
                     <h3 className="font-display text-cream text-base">{selected.pubName}</h3>
                     <p className="font-mono text-cream/40 text-xs mt-0.5">{selected.address}</p>

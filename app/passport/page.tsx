@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { getAllPints } from '@/lib/firestore';
 import { AuthGuard } from '@/components/layout/AuthGuard';
@@ -10,8 +11,9 @@ import { BottomNav } from '@/components/layout/BottomNav';
 import { PassportStamp } from '@/components/pint/PassportStamp';
 import { HarpLogo } from '@/components/ui/HarpLogo';
 import { Button } from '@/components/ui/Button';
+import { BadgeStamp } from '@/components/social/BadgeStamp';
 import type { Pint } from '@/types';
-import toast from 'react-hot-toast';
+import { ALL_BADGE_IDS } from '@/types';
 
 export default function PassportPage() {
   const { firebaseUser, userDoc } = useAuth();
@@ -49,6 +51,9 @@ export default function PassportPage() {
     }
   };
 
+  const earnedBadgeIds = (userDoc?.badges ?? []).map((b) => b.id);
+  const badgeMap = Object.fromEntries((userDoc?.badges ?? []).map((b) => [b.id, b]));
+
   return (
     <AuthGuard>
       <div className="min-h-screen bg-black">
@@ -58,7 +63,7 @@ export default function PassportPage() {
             <div>
               <h1 className="font-display text-2xl text-cream">Passport</h1>
               <p className="text-cream/40 font-mono text-xs tracking-wide mt-0.5">
-                {pints.length} stamp{pints.length !== 1 ? 's' : ''} collected
+                {pints.length} stamp{pints.length !== 1 ? 's' : ''} · {earnedBadgeIds.length} badge{earnedBadgeIds.length !== 1 ? 's' : ''}
               </p>
             </div>
             <Button
@@ -79,63 +84,88 @@ export default function PassportPage() {
               <div className="w-8 h-8 border-2 border-gold/30 border-t-gold rounded-full animate-spin" />
             </div>
           ) : (
-            <div
-              ref={passportRef}
-              className="bg-[#0e0e0e] border border-gold/20 rounded-2xl p-6 relative overflow-hidden"
-            >
-              {/* Passport header */}
-              <div className="flex items-center gap-4 mb-8 pb-6 border-b border-gold/10">
-                <HarpLogo className="w-10 h-12 flex-shrink-0" />
-                <div>
-                  <p className="font-mono text-gold/50 text-[10px] tracking-widest uppercase">
-                    Guinness Passport
-                  </p>
-                  <p className="font-display text-cream text-xl mt-0.5">
-                    {userDoc?.displayName ?? 'Drinker'}
-                  </p>
-                  <p className="font-mono text-cream/30 text-xs mt-0.5">
-                    {userDoc?.email ?? ''}
-                  </p>
+            <>
+              <div
+                ref={passportRef}
+                className="bg-[#0e0e0e] border border-gold/20 rounded-2xl p-6 relative overflow-hidden"
+              >
+                {/* Passport header */}
+                <div className="flex items-center gap-4 mb-8 pb-6 border-b border-gold/10">
+                  <HarpLogo className="w-10 h-12 flex-shrink-0" />
+                  <div>
+                    <p className="font-mono text-gold/50 text-[10px] tracking-widest uppercase">
+                      Guinness Passport
+                    </p>
+                    <p className="font-display text-cream text-xl mt-0.5">
+                      {userDoc?.displayName ?? 'Drinker'}
+                    </p>
+                    <p className="font-mono text-cream/30 text-xs mt-0.5">
+                      {userDoc?.email ?? ''}
+                    </p>
+                  </div>
+                  <div className="ml-auto text-right">
+                    <p className="font-mono text-cream/20 text-[10px] tracking-widest uppercase">Total</p>
+                    <p className="font-display text-gold text-3xl">{pints.length}</p>
+                    <p className="font-mono text-cream/20 text-[10px]">pints</p>
+                  </div>
                 </div>
-                <div className="ml-auto text-right">
-                  <p className="font-mono text-cream/20 text-[10px] tracking-widest uppercase">Total</p>
-                  <p className="font-display text-gold text-3xl">{pints.length}</p>
-                  <p className="font-mono text-cream/20 text-[10px]">pints</p>
-                </div>
+
+                {/* Pint stamps grid */}
+                {pints.length === 0 ? (
+                  <div className="text-center py-12 space-y-3">
+                    <div className="w-20 h-20 rounded-full border-4 border-dashed border-white/10 mx-auto flex items-center justify-center">
+                      <span className="text-2xl">🍺</span>
+                    </div>
+                    <p className="font-display text-cream/60">No stamps yet</p>
+                    <p className="font-mono text-cream/30 text-xs">Log your first pint to earn your first stamp</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-6">
+                    {pints.map((pint, i) => (
+                      <PassportStamp key={pint.id} pint={pint} index={i} number={i + 1} />
+                    ))}
+                    {pints.length < 12 &&
+                      [...Array(Math.ceil(pints.length / 4) * 4 - pints.length)].map((_, i) => (
+                        <div
+                          key={`empty-${i}`}
+                          className="w-28 h-28 mx-auto rounded-full border-4 border-dashed border-white/5 opacity-30"
+                        />
+                      ))}
+                  </div>
+                )}
+
+                {/* Decorative corner ornaments */}
+                <div className="absolute top-3 right-3 w-6 h-6 border-t-2 border-r-2 border-gold/20 rounded-tr" />
+                <div className="absolute bottom-3 left-3 w-6 h-6 border-b-2 border-l-2 border-gold/20 rounded-bl" />
+                <div className="absolute top-3 left-3 w-6 h-6 border-t-2 border-l-2 border-gold/20 rounded-tl" />
+                <div className="absolute bottom-3 right-3 w-6 h-6 border-b-2 border-r-2 border-gold/20 rounded-br" />
               </div>
 
-              {/* Stamps grid */}
-              {pints.length === 0 ? (
-                <div className="text-center py-12 space-y-3">
-                  <div className="w-20 h-20 rounded-full border-4 border-dashed border-white/10 mx-auto flex items-center justify-center">
-                    <span className="text-2xl">🍺</span>
-                  </div>
-                  <p className="font-display text-cream/60">No stamps yet</p>
-                  <p className="font-mono text-cream/30 text-xs">Log your first pint to earn your first stamp</p>
+              {/* Badges section */}
+              <div className="mt-8">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="font-display text-cream text-lg">Badges</h2>
+                  <span className="font-mono text-cream/30 text-xs">
+                    {earnedBadgeIds.length} / {ALL_BADGE_IDS.length}
+                  </span>
                 </div>
-              ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-6">
-                  {pints.map((pint, i) => (
-                    <PassportStamp key={pint.id} pint={pint} index={i} number={i + 1} />
-                  ))}
-
-                  {/* Empty stamp slots */}
-                  {pints.length < 12 &&
-                    [...Array(Math.ceil(pints.length / 4) * 4 - pints.length)].map((_, i) => (
-                      <div
-                        key={`empty-${i}`}
-                        className="w-28 h-28 mx-auto rounded-full border-4 border-dashed border-white/5 opacity-30"
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-4">
+                  {ALL_BADGE_IDS.map((id, i) => {
+                    const earned = earnedBadgeIds.includes(id);
+                    const badge = badgeMap[id];
+                    return (
+                      <BadgeStamp
+                        key={id}
+                        id={id}
+                        earned={earned}
+                        earnedAt={badge?.earnedAt?.toDate?.()}
+                        index={i}
                       />
-                    ))}
+                    );
+                  })}
                 </div>
-              )}
-
-              {/* Decorative corner ornaments */}
-              <div className="absolute top-3 right-3 w-6 h-6 border-t-2 border-r-2 border-gold/20 rounded-tr" />
-              <div className="absolute bottom-3 left-3 w-6 h-6 border-b-2 border-l-2 border-gold/20 rounded-bl" />
-              <div className="absolute top-3 left-3 w-6 h-6 border-t-2 border-l-2 border-gold/20 rounded-tl" />
-              <div className="absolute bottom-3 right-3 w-6 h-6 border-b-2 border-r-2 border-gold/20 rounded-br" />
-            </div>
+              </div>
+            </>
           )}
 
           {pints.length > 0 && (
