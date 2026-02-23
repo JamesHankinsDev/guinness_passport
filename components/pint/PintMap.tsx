@@ -9,11 +9,20 @@ interface PintMapProps {
   onPintSelect?: (pint: Pint) => void;
 }
 
+/** A pint has valid coordinates if it's not sitting at 0,0 (the Atlantic null-island). */
+function hasCoords(p: Pint) {
+  return Math.abs(p.lat) > 0.001 || Math.abs(p.lng) > 0.001;
+}
+
 export function PintMap({ pints, onPintSelect }: PintMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<unknown>(null);
   const [mapboxError, setMapboxError] = useState<string | null>(null);
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+
+  // Pints that can actually be plotted
+  const mappable = pints.filter(hasCoords);
+  const unmapped = pints.filter((p) => !hasCoords(p));
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -30,15 +39,15 @@ export function PintMap({ pints, onPintSelect }: PintMapProps) {
 
         mapboxgl.accessToken = token;
 
-        // Center on pints or default to Dublin
-        const centerLng = pints.length > 0 ? pints[0].lng : -6.26;
-        const centerLat = pints.length > 0 ? pints[0].lat : 53.34;
+        // Centre on the first mappable pint, or fall back to Dublin
+        const centerLng = mappable.length > 0 ? mappable[0].lng : -6.26;
+        const centerLat = mappable.length > 0 ? mappable[0].lat : 53.34;
 
         const map = new mapboxgl.Map({
           container: mapRef.current!,
           style: 'mapbox://styles/mapbox/dark-v11',
           center: [centerLng, centerLat],
-          zoom: pints.length > 0 ? 12 : 6,
+          zoom: mappable.length > 0 ? 12 : 6,
         });
 
         mapInstanceRef.current = map;
@@ -46,11 +55,10 @@ export function PintMap({ pints, onPintSelect }: PintMapProps) {
         map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right');
 
         map.on('load', () => {
-          // Ensure the canvas fills its container after async init
           map.resize();
 
-          // Add custom gold pin markers
-          pints.forEach((pint) => {
+          // Only plot pints with valid coordinates
+          mappable.forEach((pint) => {
             const el = document.createElement('div');
             el.className = 'custom-pin';
             el.style.cssText = `
@@ -65,7 +73,6 @@ export function PintMap({ pints, onPintSelect }: PintMapProps) {
               position: relative;
             `;
 
-            // Inner dot
             const inner = document.createElement('div');
             inner.style.cssText = `
               position: absolute;
@@ -86,11 +93,14 @@ export function PintMap({ pints, onPintSelect }: PintMapProps) {
               .addTo(map);
           });
 
-          // Fit bounds if multiple pints
-          if (pints.length > 1) {
-            const bounds = pints.reduce(
+          // Fit bounds to all mapped pints
+          if (mappable.length > 1) {
+            const bounds = mappable.reduce(
               (b, p) => b.extend([p.lng, p.lat] as [number, number]),
-              new mapboxgl.LngLatBounds([pints[0].lng, pints[0].lat], [pints[0].lng, pints[0].lat])
+              new mapboxgl.LngLatBounds(
+                [mappable[0].lng, mappable[0].lat],
+                [mappable[0].lng, mappable[0].lat]
+              )
             );
             map.fitBounds(bounds, { padding: 60, maxZoom: 14 });
           }
@@ -127,6 +137,7 @@ export function PintMap({ pints, onPintSelect }: PintMapProps) {
               {pints.map((p) => (
                 <button
                   key={p.id}
+                  type="button"
                   onClick={() => onPintSelect?.(p)}
                   className="w-full text-left bg-white/5 hover:bg-white/8 rounded-lg px-3 py-2 transition-colors"
                 >
@@ -141,5 +152,18 @@ export function PintMap({ pints, onPintSelect }: PintMapProps) {
     );
   }
 
-  return <div ref={mapRef} className="w-full h-full" />;
+  return (
+    <div className="relative w-full h-full">
+      <div ref={mapRef} className="w-full h-full" />
+
+      {/* Badge for pints that have no coordinates */}
+      {unmapped.length > 0 && (
+        <div className="absolute bottom-3 left-3 z-10 bg-black/80 backdrop-blur border border-white/10 rounded-full px-3 py-1.5">
+          <span className="font-mono text-cream/50 text-xs">
+            {unmapped.length} pint{unmapped.length !== 1 ? 's' : ''} without location
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
