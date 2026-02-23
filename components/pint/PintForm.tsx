@@ -13,26 +13,29 @@ import { ALL_TAGS, PintFormData } from '@/types';
 import { Button } from '@/components/ui/Button';
 import { StarRating } from '@/components/ui/StarRating';
 import { TagPill } from '@/components/ui/TagPill';
-import { Timestamp } from 'firebase/firestore';
 
 const STEPS = ['Location', 'Rating', 'Tags', 'Note', 'Photo'] as const;
 type Step = typeof STEPS[number];
 
-interface StampOverlay {
-  show: boolean;
+// Prevent Enter key from bubbling up and triggering any button outside the input
+function suppressEnter(e: React.KeyboardEvent) {
+  if (e.key === 'Enter') e.preventDefault();
 }
 
 export function PintForm() {
   const { firebaseUser, refreshUserDoc } = useAuth();
   const router = useRouter();
-  const { lat, lng, loading: geoLoading, error: geoError, locate } = useGeolocation();
+  const { lat, lng, loading: geoLoading, locate } = useGeolocation();
 
   const [step, setStep] = useState<Step>('Location');
   const [pubs, setPubs] = useState<PlaceResult[]>([]);
   const [pubSearch, setPubSearch] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [stamp, setStamp] = useState<StampOverlay>({ show: false });
+  const [stampVisible, setStampVisible] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualName, setManualName] = useState('');
+  const [manualAddress, setManualAddress] = useState('');
 
   const [form, setForm] = useState<PintFormData>({
     pubName: '',
@@ -49,11 +52,6 @@ export function PintForm() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const stepIndex = STEPS.indexOf(step);
-
-  const handleLocate = async () => {
-    locate();
-    // Watch for geolocation — we poll state after locate
-  };
 
   const handleNearbySearch = async () => {
     if (!lat || !lng) return;
@@ -89,6 +87,25 @@ export function PintForm() {
     setPubs([]);
   };
 
+  const confirmManual = () => {
+    if (!manualName.trim()) return;
+    setForm((f) => ({
+      ...f,
+      pubName: manualName.trim(),
+      address: manualAddress.trim(),
+      placeId: `manual_${Date.now()}`,
+      lat: lat ?? 0,
+      lng: lng ?? 0,
+    }));
+    setManualOpen(false);
+  };
+
+  const clearPub = () => {
+    setForm((f) => ({ ...f, pubName: '', address: '', placeId: '' }));
+    setManualName('');
+    setManualAddress('');
+  };
+
   const toggleTag = (tag: string) => {
     setForm((f) => ({
       ...f,
@@ -100,8 +117,7 @@ export function PintForm() {
     const file = e.target.files?.[0];
     if (!file) return;
     setPhoto(file);
-    const url = URL.createObjectURL(file);
-    setPhotoPreview(url);
+    setPhotoPreview(URL.createObjectURL(file));
   };
 
   const canProceed = () => {
@@ -120,8 +136,7 @@ export function PintForm() {
       await addPint(firebaseUser.uid, form, photoUrl);
       await refreshUserDoc();
 
-      // Show stamp animation
-      setStamp({ show: true });
+      setStampVisible(true);
       toast.success('Pint logged! 🍺');
       setTimeout(() => {
         router.replace('/diary');
@@ -138,7 +153,7 @@ export function PintForm() {
     <div className="relative">
       {/* Stamp overlay */}
       <AnimatePresence>
-        {stamp.show && (
+        {stampVisible && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -149,12 +164,13 @@ export function PintForm() {
               initial={{ scale: 2, rotate: -20, opacity: 0 }}
               animate={{ scale: 1, rotate: -5, opacity: 1 }}
               transition={{ type: 'spring', damping: 10, stiffness: 150 }}
-              className="relative"
             >
               <div className="w-44 h-44 rounded-full border-8 border-gold flex items-center justify-center bg-black">
                 <div className="text-center">
                   <div className="font-mono text-gold text-xs tracking-widest uppercase mb-1">Logged</div>
-                  <div className="font-display text-gold text-xl font-bold">{form.pubName.split(' ').slice(0, 2).join(' ')}</div>
+                  <div className="font-display text-gold text-xl font-bold">
+                    {form.pubName.split(' ').slice(0, 2).join(' ')}
+                  </div>
                   <div className="font-mono text-gold/60 text-xs mt-1 tracking-wider">
                     {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}
                   </div>
@@ -190,18 +206,20 @@ export function PintForm() {
           <motion.div key="location" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
             <div>
               <h2 className="font-display text-xl text-cream mb-1">Where are you?</h2>
-              <p className="text-cream/40 font-mono text-xs">Find the pub you're drinking in</p>
+              <p className="text-cream/40 font-mono text-xs">Find the pub you&apos;re drinking in</p>
             </div>
 
             {form.pubName ? (
+              /* Selected pub confirmation card */
               <div className="bg-gold/10 border border-gold/30 rounded-xl p-4 flex items-center justify-between">
                 <div>
                   <p className="font-display text-cream">{form.pubName}</p>
-                  <p className="text-cream/50 font-mono text-xs mt-0.5">{form.address}</p>
+                  <p className="text-cream/50 font-mono text-xs mt-0.5">{form.address || 'No address'}</p>
                 </div>
                 <button
-                  onClick={() => setForm((f) => ({ ...f, pubName: '', address: '', placeId: '' }))}
-                  className="text-cream/40 hover:text-cream transition-colors"
+                  type="button"
+                  onClick={clearPub}
+                  className="text-cream/40 hover:text-cream transition-colors p-1"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -210,39 +228,37 @@ export function PintForm() {
               </div>
             ) : (
               <>
+                {/* GPS / nearby search */}
                 <Button
                   variant="secondary"
                   size="md"
                   className="w-full"
                   loading={geoLoading}
-                  onClick={handleLocate}
+                  onClick={locate}
                 >
                   <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  {lat && lng ? 'Search near my location' : 'Detect my location'}
+                  {lat && lng ? 'Location detected' : 'Detect my location'}
                 </Button>
 
                 {lat && lng && (
-                  <Button
-                    variant="primary"
-                    size="md"
-                    className="w-full"
-                    loading={searchLoading}
-                    onClick={handleNearbySearch}
-                  >
+                  <Button variant="primary" size="md" className="w-full" loading={searchLoading} onClick={handleNearbySearch}>
                     Find nearby pubs
                   </Button>
                 )}
 
+                {/* Text search */}
                 <div className="flex gap-2">
                   <input
                     type="text"
                     placeholder="Search pub name…"
                     value={pubSearch}
                     onChange={(e) => setPubSearch(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleTextSearch()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); handleTextSearch(); }
+                    }}
                     className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-cream placeholder-cream/30 font-mono text-sm focus:outline-none focus:border-gold/40 transition-colors"
                   />
                   <Button variant="secondary" size="md" loading={searchLoading} onClick={handleTextSearch}>
@@ -250,38 +266,13 @@ export function PintForm() {
                   </Button>
                 </div>
 
-                {/* Manual entry */}
-                <details className="group">
-                  <summary className="text-cream/40 font-mono text-xs cursor-pointer hover:text-cream/60 transition-colors list-none flex items-center gap-1">
-                    <svg className="w-3 h-3 group-open:rotate-90 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                    </svg>
-                    Enter manually
-                  </summary>
-                  <div className="mt-3 space-y-2">
-                    <input
-                      type="text"
-                      placeholder="Pub name"
-                      value={form.pubName}
-                      onChange={(e) => setForm((f) => ({ ...f, pubName: e.target.value }))}
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-cream placeholder-cream/30 font-mono text-sm focus:outline-none focus:border-gold/40 transition-colors"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Address"
-                      value={form.address}
-                      onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-cream placeholder-cream/30 font-mono text-sm focus:outline-none focus:border-gold/40 transition-colors"
-                    />
-                  </div>
-                </details>
-
                 {/* Pub results */}
                 {pubs.length > 0 && (
                   <div className="space-y-1.5 max-h-60 overflow-y-auto">
                     {pubs.map((pub) => (
                       <button
                         key={pub.placeId}
+                        type="button"
                         onClick={() => selectPub(pub)}
                         className="w-full text-left bg-white/5 hover:bg-white/8 border border-white/10 hover:border-gold/30 rounded-lg px-4 py-3 transition-colors"
                       >
@@ -291,6 +282,68 @@ export function PintForm() {
                     ))}
                   </div>
                 )}
+
+                {/* Manual entry — controlled open/close, no <details> */}
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setManualOpen((o) => !o)}
+                    className="flex items-center gap-1.5 text-cream/40 font-mono text-xs hover:text-cream/60 transition-colors"
+                  >
+                    <svg
+                      className={`w-3 h-3 transition-transform ${manualOpen ? 'rotate-90' : ''}`}
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                    Enter manually
+                  </button>
+
+                  <AnimatePresence>
+                    {manualOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="pt-3 space-y-2">
+                          <input
+                            type="text"
+                            placeholder="Pub name *"
+                            value={manualName}
+                            onChange={(e) => setManualName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.form?.elements.namedItem('manualAddress') as HTMLElement | null; (document.getElementById('manualAddress') as HTMLInputElement | null)?.focus(); }
+                            }}
+                            className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-cream placeholder-cream/30 font-mono text-sm focus:outline-none focus:border-gold/40 transition-colors"
+                          />
+                          <input
+                            id="manualAddress"
+                            type="text"
+                            placeholder="Address (optional)"
+                            value={manualAddress}
+                            onChange={(e) => setManualAddress(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') { e.preventDefault(); confirmManual(); }
+                            }}
+                            className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-cream placeholder-cream/30 font-mono text-sm focus:outline-none focus:border-gold/40 transition-colors"
+                          />
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            className="w-full"
+                            disabled={!manualName.trim()}
+                            onClick={confirmManual}
+                          >
+                            Use this pub
+                          </Button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </>
             )}
           </motion.div>
@@ -361,6 +414,7 @@ export function PintForm() {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={photoPreview} alt="Pint" className="w-full h-48 object-cover" />
                 <button
+                  type="button"
                   onClick={() => { setPhoto(null); setPhotoPreview(null); }}
                   className="absolute top-2 right-2 w-7 h-7 bg-black/70 rounded-full flex items-center justify-center text-cream hover:bg-black/90 transition-colors"
                 >
@@ -371,6 +425,7 @@ export function PintForm() {
               </div>
             ) : (
               <button
+                type="button"
                 onClick={() => fileRef.current?.click()}
                 className="w-full h-40 border-2 border-dashed border-white/15 hover:border-gold/30 rounded-xl flex flex-col items-center justify-center gap-3 text-cream/40 hover:text-cream/60 transition-colors"
               >
@@ -389,12 +444,7 @@ export function PintForm() {
       {/* Nav buttons */}
       <div className="flex gap-3 mt-8">
         {stepIndex > 0 && (
-          <Button
-            variant="ghost"
-            size="md"
-            className="flex-1"
-            onClick={() => setStep(STEPS[stepIndex - 1])}
-          >
+          <Button variant="ghost" size="md" className="flex-1" onClick={() => setStep(STEPS[stepIndex - 1])}>
             ← Back
           </Button>
         )}
@@ -409,13 +459,7 @@ export function PintForm() {
             Next →
           </Button>
         ) : (
-          <Button
-            variant="primary"
-            size="md"
-            className="flex-1"
-            loading={saving}
-            onClick={handleSave}
-          >
+          <Button variant="primary" size="md" className="flex-1" loading={saving} onClick={handleSave}>
             Log this pint
           </Button>
         )}
