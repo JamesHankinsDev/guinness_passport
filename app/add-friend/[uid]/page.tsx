@@ -89,6 +89,7 @@ export default function AddFriendPage() {
                   <img
                     src={friend.photoURL}
                     alt={friend.displayName}
+                    referrerPolicy="no-referrer"
                     className="w-16 h-16 rounded-full border-2 border-gold/30 object-cover"
                   />
                 ) : (

@@ -87,7 +87,7 @@ export default function FriendPassportPage() {
                   <div className="w-12 h-12 rounded-full bg-gold/20 border-2 border-gold/30 flex items-center justify-center shrink-0">
                     {friend.photoURL ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={friend.photoURL} alt="" className="w-full h-full rounded-full object-cover" />
+                      <img src={friend.photoURL} alt="" referrerPolicy="no-referrer" className="w-full h-full rounded-full object-cover" />
                     ) : (
                       <HarpLogo className="w-6 h-7" />
                     )}

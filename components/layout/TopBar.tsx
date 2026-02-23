@@ -51,7 +51,7 @@ export function TopBar() {
           >
             {photoURL ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={photoURL} alt="" className="w-full h-full object-cover" />
+              <img src={photoURL} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
             ) : (
               <span className={pathname === '/profile' ? 'text-gold' : 'text-cream/60'}>
                 {userDoc?.displayName?.[0]?.toUpperCase() ?? firebaseUser?.email?.[0]?.toUpperCase() ?? '?'}

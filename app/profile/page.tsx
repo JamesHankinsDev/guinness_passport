@@ -86,7 +86,7 @@ export default function ProfilePage() {
             <div className="w-20 h-20 rounded-full bg-gold/10 border-2 border-gold/30 overflow-hidden flex items-center justify-center mb-3">
               {(firebaseUser?.photoURL ?? userDoc?.photoURL) ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={firebaseUser?.photoURL ?? userDoc!.photoURL!} alt="" className="w-full h-full object-cover" />
+                <img src={firebaseUser?.photoURL ?? userDoc!.photoURL!} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
               ) : (
                 <HarpLogo className="w-8 h-10" />
               )}
@@ -150,7 +150,7 @@ export default function ProfilePage() {
                       <div className="w-9 h-9 rounded-full bg-gold/20 border border-gold/30 flex items-center justify-center shrink-0">
                         {f.photoURL ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={f.photoURL} alt="" className="w-full h-full rounded-full object-cover" />
+                          <img src={f.photoURL} alt="" referrerPolicy="no-referrer" className="w-full h-full rounded-full object-cover" />
                         ) : (
                           <span className="font-display text-gold text-sm">
                             {(f.displayName ?? 'G')[0].toUpperCase()}
