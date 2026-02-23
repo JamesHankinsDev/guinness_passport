@@ -50,7 +50,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Fetch the Firestore user doc in the background
       getUserDoc(user.uid)
-        .then((doc) => setUserDoc(doc))
+        .then((doc) => {
+          setUserDoc(doc);
+          // Sync photoURL from Firebase Auth into Firestore if it's missing
+          // (Google OAuth users who signed up before photoURL was stored)
+          if (doc && !doc.photoURL && user.photoURL) {
+            import('@/lib/firestore').then(({ updateUserDoc }) => {
+              updateUserDoc(user.uid, { photoURL: user.photoURL! }).catch(() => {});
+            });
+          }
+        })
         .catch(() => {
           // Firestore DB may not be initialised yet — the app still works
           // without the doc (totalPints/avgRating just show 0)

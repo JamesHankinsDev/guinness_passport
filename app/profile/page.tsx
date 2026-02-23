@@ -83,10 +83,10 @@ export default function ProfilePage() {
             animate={{ opacity: 1, scale: 1 }}
             className="flex flex-col items-center mb-8"
           >
-            <div className="w-20 h-20 rounded-full bg-gold/10 border-2 border-gold/30 flex items-center justify-center mb-3">
-              {userDoc?.photoURL ? (
+            <div className="w-20 h-20 rounded-full bg-gold/10 border-2 border-gold/30 overflow-hidden flex items-center justify-center mb-3">
+              {(firebaseUser?.photoURL ?? userDoc?.photoURL) ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={userDoc.photoURL} alt="" className="w-full h-full rounded-full object-cover" />
+                <img src={firebaseUser?.photoURL ?? userDoc!.photoURL!} alt="" className="w-full h-full object-cover" />
               ) : (
                 <HarpLogo className="w-8 h-10" />
               )}
