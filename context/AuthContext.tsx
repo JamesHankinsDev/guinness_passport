@@ -27,21 +27,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshUserDoc = async () => {
     if (auth.currentUser) {
-      const doc = await getUserDoc(auth.currentUser.uid);
-      setUserDoc(doc);
+      try {
+        const doc = await getUserDoc(auth.currentUser.uid);
+        setUserDoc(doc);
+      } catch {
+        // Firestore not yet set up — non-fatal
+      }
     }
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      // Set auth state and unblock loading immediately — don't await Firestore
       setFirebaseUser(user);
-      if (user) {
-        const doc = await getUserDoc(user.uid);
-        setUserDoc(doc);
-      } else {
+      if (!user) {
         setUserDoc(null);
+        setLoading(false);
+        return;
       }
+
       setLoading(false);
+
+      // Fetch the Firestore user doc in the background
+      getUserDoc(user.uid)
+        .then((doc) => setUserDoc(doc))
+        .catch(() => {
+          // Firestore DB may not be initialised yet — the app still works
+          // without the doc (totalPints/avgRating just show 0)
+        });
     });
     return unsubscribe;
   }, []);
