@@ -27,10 +27,18 @@ export default function MapPage() {
 
   return (
     <AuthGuard>
-      <div className="h-screen bg-black flex flex-col">
+      {/*
+        Outer shell: fixed full-screen so the map always has a
+        pixel-perfect, non-scrolling container. TopBar and BottomNav
+        float on top via their own fixed positioning.
+      */}
+      <div className="fixed inset-0 bg-black">
         <TopBar />
 
-        <div className="flex-1 relative mt-14">
+        {/* Map canvas: fills from below TopBar (56px) to bottom of screen.
+            BottomNav (mobile) floats over the map — the pint-count pill
+            and pin cards are offset accordingly so they stay visible. */}
+        <div className="absolute inset-0 top-14">
           {loading ? (
             <div className="w-full h-full bg-[#111] flex items-center justify-center">
               <div className="w-8 h-8 border-2 border-gold/30 border-t-gold rounded-full animate-spin" />
@@ -39,15 +47,15 @@ export default function MapPage() {
             <PintMap pints={pints} onPintSelect={setSelected} />
           )}
 
-          {/* Pint count overlay */}
-          <div className="absolute top-3 left-3 bg-black/80 backdrop-blur border border-white/10 rounded-full px-3 py-1.5 flex items-center gap-2">
+          {/* Pint count pill */}
+          <div className="absolute top-3 left-3 bg-black/80 backdrop-blur border border-white/10 rounded-full px-3 py-1.5 flex items-center gap-2 z-10">
             <div className="w-2 h-2 rounded-full bg-gold animate-pulse" />
             <span className="font-mono text-cream/70 text-xs">
               {pints.length} pint{pints.length !== 1 ? 's' : ''} logged
             </span>
           </div>
 
-          {/* Selected pint card */}
+          {/* Selected pint card — sits above the BottomNav on mobile */}
           <AnimatePresence>
             {selected && (
               <motion.div
@@ -55,9 +63,10 @@ export default function MapPage() {
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: 100, opacity: 0 }}
                 transition={{ type: 'spring', damping: 25, stiffness: 280 }}
-                className="absolute bottom-20 md:bottom-4 left-3 right-3 md:left-auto md:right-4 md:w-80 bg-[#1a1a1a] border border-gold/20 rounded-2xl p-4 shadow-xl shadow-black/60"
+                className="absolute bottom-20 md:bottom-4 left-3 right-3 md:left-auto md:right-4 md:w-80 bg-[#1a1a1a] border border-gold/20 rounded-2xl p-4 shadow-xl shadow-black/60 z-10"
               >
                 <button
+                  type="button"
                   onClick={() => setSelected(null)}
                   className="absolute top-3 right-3 text-cream/30 hover:text-cream transition-colors"
                 >
@@ -80,7 +89,9 @@ export default function MapPage() {
                     <p className="text-cream/60 text-xs font-body italic line-clamp-2">{selected.note}</p>
                   )}
                   <p className="font-mono text-cream/30 text-[10px]">
-                    {selected.createdAt?.toDate?.().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) ?? ''}
+                    {selected.createdAt?.toDate?.().toLocaleDateString('en-GB', {
+                      day: 'numeric', month: 'short', year: 'numeric',
+                    }) ?? ''}
                   </p>
                 </div>
               </motion.div>

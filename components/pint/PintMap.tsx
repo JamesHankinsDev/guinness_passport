@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import 'mapbox-gl/dist/mapbox-gl.css';
 import { Pint } from '@/types';
 
 interface PintMapProps {
@@ -45,6 +46,9 @@ export function PintMap({ pints, onPintSelect }: PintMapProps) {
         map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right');
 
         map.on('load', () => {
+          // Ensure the canvas fills its container after async init
+          map.resize();
+
           // Add custom gold pin markers
           pints.forEach((pint) => {
             const el = document.createElement('div');
