@@ -12,6 +12,10 @@ export interface User {
   friendIds?: string[];
   badges?: Badge[];
   socialPints?: number;
+  totalSplits?: number;
+  avgSplitScore?: number;
+  bestSplitScore?: number;
+  splitStreak?: number;
 }
 
 export interface Pint {
@@ -28,6 +32,8 @@ export interface Pint {
   photoUrl?: string;
   createdAt: Timestamp;
   withFriends?: string[];
+  splitScore?: number;
+  splitAttempted?: boolean;
 }
 
 export type PintTag =
@@ -66,6 +72,8 @@ export interface PintFormData {
   note: string;
   photo?: File;
   withFriends?: string[];
+  splitScore?: number;
+  splitAttempted?: boolean;
 }
 
 export interface Stats {
@@ -76,6 +84,10 @@ export interface Stats {
   bestPubRating: number;
   ratingDistribution: Record<number, number>;
   dayOfWeekDistribution: Record<string, number>;
+  totalSplits: number;
+  avgSplitScore: number | null;
+  bestSplitScore: number | null;
+  splitScoreDistribution: Record<string, number>;
 }
 
 // ─── Badges ───────────────────────────────────────────────────────────────────
@@ -86,7 +98,12 @@ export type BadgeId =
   | 'round_buyer'
   | 'pub_crawlers'
   | 'the_regular'
-  | 'social_butterfly';
+  | 'social_butterfly'
+  | 'first_split'
+  | 'perfect_split'
+  | 'split_streak'
+  | 'split_master'
+  | 'g_whiz';
 
 export interface Badge {
   id: BadgeId;
@@ -133,6 +150,36 @@ export const BADGE_CONFIG: Record<
     icon: '🦋',
     color: '#E91E63',
   },
+  first_split: {
+    name: 'First Split',
+    description: 'Attempt your first Split the G',
+    icon: '🎯',
+    color: '#4CAF50',
+  },
+  perfect_split: {
+    name: 'Perfect Split',
+    description: 'Score 95+ on a split',
+    icon: '💎',
+    color: '#00BCD4',
+  },
+  split_streak: {
+    name: 'Hot Streak',
+    description: '5 consecutive splits scoring 70+',
+    icon: '🔥',
+    color: '#FF5722',
+  },
+  split_master: {
+    name: 'Split Master',
+    description: 'Average 80+ over 10+ attempts',
+    icon: '👑',
+    color: '#FFD700',
+  },
+  g_whiz: {
+    name: 'G Whiz',
+    description: '25 total split attempts',
+    icon: '🏆',
+    color: '#9C27B0',
+  },
 };
 
 export const ALL_BADGE_IDS: BadgeId[] = [
@@ -142,4 +189,9 @@ export const ALL_BADGE_IDS: BadgeId[] = [
   'pub_crawlers',
   'the_regular',
   'social_butterfly',
+  'first_split',
+  'perfect_split',
+  'split_streak',
+  'split_master',
+  'g_whiz',
 ];

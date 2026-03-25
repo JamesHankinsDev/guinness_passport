@@ -5,12 +5,18 @@ import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { getUserDoc } from '@/lib/firestore';
 import { User } from '@/types';
+import { DEMO_UID, DEMO_USER } from '@/lib/demoData';
+
+const DEMO_FIREBASE_USER = { uid: DEMO_UID, photoURL: null, email: null } as unknown as FirebaseUser;
 
 interface AuthContextValue {
   firebaseUser: FirebaseUser | null;
   userDoc: User | null;
   loading: boolean;
   refreshUserDoc: () => Promise<void>;
+  isDemo: boolean;
+  enterDemo: () => void;
+  exitDemo: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -18,12 +24,28 @@ const AuthContext = createContext<AuthContextValue>({
   userDoc: null,
   loading: true,
   refreshUserDoc: async () => {},
+  isDemo: false,
+  enterDemo: () => {},
+  exitDemo: () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [userDoc, setUserDoc] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isDemo, setIsDemo] = useState(() =>
+    typeof window !== 'undefined' && sessionStorage.getItem('demo_mode') === '1'
+  );
+
+  const enterDemo = () => {
+    sessionStorage.setItem('demo_mode', '1');
+    setIsDemo(true);
+  };
+
+  const exitDemo = () => {
+    sessionStorage.removeItem('demo_mode');
+    setIsDemo(false);
+  };
 
   const refreshUserDoc = async () => {
     if (auth.currentUser) {
@@ -68,8 +90,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, []);
 
+  const value: AuthContextValue = isDemo
+    ? {
+        firebaseUser: DEMO_FIREBASE_USER,
+        userDoc: DEMO_USER,
+        loading: false,
+        refreshUserDoc: async () => {},
+        isDemo: true,
+        enterDemo,
+        exitDemo,
+      }
+    : { firebaseUser, userDoc, loading, refreshUserDoc, isDemo: false, enterDemo, exitDemo };
+
   return (
-    <AuthContext.Provider value={{ firebaseUser, userDoc, loading, refreshUserDoc }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

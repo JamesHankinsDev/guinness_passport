@@ -31,6 +31,10 @@ export async function createUserDoc(uid: string, data: Partial<User>) {
     socialPints: 0,
     friendIds: [],
     badges: [],
+    totalSplits: 0,
+    avgSplitScore: 0,
+    bestSplitScore: 0,
+    splitStreak: 0,
     createdAt: serverTimestamp(),
   });
 }
@@ -70,6 +74,8 @@ export async function addPint(
     note: formData.note,
     photoUrl: photoUrl ?? '',
     withFriends: formData.withFriends ?? [],
+    splitScore: formData.splitAttempted ? (formData.splitScore ?? 0) : null,
+    splitAttempted: formData.splitAttempted ?? false,
     createdAt: serverTimestamp(),
   };
 
@@ -90,7 +96,34 @@ export async function addPint(
     if (hasFriends) {
       update.socialPints = increment(1);
     }
+
+    // Update split stats if attempted
+    if (formData.splitAttempted && formData.splitScore !== undefined) {
+      const currentTotalSplits = userData.totalSplits ?? 0;
+      const currentAvgSplit = userData.avgSplitScore ?? 0;
+      const currentBest = userData.bestSplitScore ?? 0;
+      const currentStreak = userData.splitStreak ?? 0;
+
+      const newTotalSplits = currentTotalSplits + 1;
+      const newAvgSplit =
+        Math.round(((currentAvgSplit * currentTotalSplits + formData.splitScore) / newTotalSplits) * 10) / 10;
+
+      update.totalSplits = newTotalSplits;
+      update.avgSplitScore = newAvgSplit;
+      update.bestSplitScore = Math.max(currentBest, formData.splitScore);
+      update.splitStreak = formData.splitScore >= 70 ? currentStreak + 1 : 0;
+    }
+
     await updateDoc(userRef, update);
+  }
+
+  // Award split badges if attempted
+  if (formData.splitAttempted && formData.splitScore !== undefined) {
+    const splitSnap = await getDoc(userRef);
+    if (splitSnap.exists()) {
+      const splitData = splitSnap.data() as User;
+      await checkAndAwardSplitBadges(uid, formData.splitScore, splitData);
+    }
   }
 
   // Award pint-related badges if friends were tagged
@@ -198,6 +231,10 @@ export async function deletePint(pintId: string, uid: string) {
 export async function computeStats(uid: string): Promise<Stats> {
   const pints = await getAllPints(uid);
 
+  const emptySplitDist: Record<string, number> = {
+    '0-20': 0, '21-40': 0, '41-60': 0, '61-80': 0, '81-100': 0,
+  };
+
   if (pints.length === 0) {
     return {
       totalPints: 0,
@@ -209,6 +246,10 @@ export async function computeStats(uid: string): Promise<Stats> {
       dayOfWeekDistribution: {
         Sun: 0, Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0,
       },
+      totalSplits: 0,
+      avgSplitScore: null,
+      bestSplitScore: null,
+      splitScoreDistribution: { ...emptySplitDist },
     };
   }
 
@@ -220,6 +261,10 @@ export async function computeStats(uid: string): Promise<Stats> {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   let totalRating = 0;
+  let splitCount = 0;
+  let splitTotal = 0;
+  let bestSplit: number | null = null;
+  const splitBuckets: Record<string, number> = { ...emptySplitDist };
 
   for (const p of pints) {
     totalRating += p.rating;
@@ -231,6 +276,17 @@ export async function computeStats(uid: string): Promise<Stats> {
 
     const date = p.createdAt?.toDate?.() ?? new Date();
     dayDist[days[date.getDay()]] += 1;
+
+    if (p.splitAttempted && p.splitScore != null) {
+      splitCount++;
+      splitTotal += p.splitScore;
+      if (bestSplit === null || p.splitScore > bestSplit) bestSplit = p.splitScore;
+      if (p.splitScore <= 20) splitBuckets['0-20']++;
+      else if (p.splitScore <= 40) splitBuckets['21-40']++;
+      else if (p.splitScore <= 60) splitBuckets['41-60']++;
+      else if (p.splitScore <= 80) splitBuckets['61-80']++;
+      else splitBuckets['81-100']++;
+    }
   }
 
   const uniquePubs = Object.keys(pubMap).length;
@@ -256,6 +312,10 @@ export async function computeStats(uid: string): Promise<Stats> {
     bestPubRating,
     ratingDistribution: ratingDist,
     dayOfWeekDistribution: dayDist,
+    totalSplits: splitCount,
+    avgSplitScore: splitCount > 0 ? Math.round((splitTotal / splitCount) * 10) / 10 : null,
+    bestSplitScore: bestSplit,
+    splitScoreDistribution: splitBuckets,
   };
 }
 
@@ -409,6 +469,39 @@ export async function checkAndAwardPintBadges(
   }
   if (socialPintsCount >= 10 && !existingIds.includes('the_regular')) {
     newBadges.push({ id: 'the_regular', earnedAt: serverTimestamp() });
+  }
+
+  await awardBadges(uid, newBadges);
+  return newBadges.map((b) => b.id);
+}
+
+/** Check and award split-the-G badges. Returns newly awarded badge IDs. */
+export async function checkAndAwardSplitBadges(
+  uid: string,
+  splitScore: number,
+  userData: Partial<User>
+): Promise<BadgeId[]> {
+  const existingIds = (userData.badges ?? []).map((b) => b.id);
+  const newBadges: BadgeWrite[] = [];
+
+  const totalSplits = userData.totalSplits ?? 0;
+  const avgSplitScore = userData.avgSplitScore ?? 0;
+  const splitStreak = userData.splitStreak ?? 0;
+
+  if (totalSplits >= 1 && !existingIds.includes('first_split')) {
+    newBadges.push({ id: 'first_split', earnedAt: serverTimestamp() });
+  }
+  if (splitScore >= 95 && !existingIds.includes('perfect_split')) {
+    newBadges.push({ id: 'perfect_split', earnedAt: serverTimestamp() });
+  }
+  if (splitStreak >= 5 && !existingIds.includes('split_streak')) {
+    newBadges.push({ id: 'split_streak', earnedAt: serverTimestamp() });
+  }
+  if (totalSplits >= 10 && avgSplitScore >= 80 && !existingIds.includes('split_master')) {
+    newBadges.push({ id: 'split_master', earnedAt: serverTimestamp() });
+  }
+  if (totalSplits >= 25 && !existingIds.includes('g_whiz')) {
+    newBadges.push({ id: 'g_whiz', earnedAt: serverTimestamp() });
   }
 
   await awardBadges(uid, newBadges);

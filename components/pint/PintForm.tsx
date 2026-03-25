@@ -14,8 +14,9 @@ import type { User } from '@/types';
 import { Button } from '@/components/ui/Button';
 import { StarRating } from '@/components/ui/StarRating';
 import { TagPill } from '@/components/ui/TagPill';
+// import { SplitTheGSlider } from '@/components/pint/SplitTheGSlider';
 
-const STEPS = ['Location', 'Rating', 'Tags', 'Friends', 'Note', 'Photo'] as const;
+const STEPS = ['Location', 'Rating', 'Tags', 'Split the G Photo', 'Friends', 'Note', 'Photo'] as const;
 type Step = typeof STEPS[number];
 
 // Prevent Enter key from bubbling up and triggering any button outside the input
@@ -24,7 +25,7 @@ function suppressEnter(e: React.KeyboardEvent) {
 }
 
 export function PintForm() {
-  const { firebaseUser, refreshUserDoc } = useAuth();
+  const { firebaseUser, refreshUserDoc, isDemo } = useAuth();
   const router = useRouter();
   const { lat, lng, loading: geoLoading, locate } = useGeolocation();
 
@@ -38,6 +39,36 @@ export function PintForm() {
   const [manualName, setManualName] = useState('');
   const [manualAddress, setManualAddress] = useState('');
   const [friends, setFriends] = useState<User[]>([]);
+  // Split the G photo state
+  const [splitPhoto, setSplitPhoto] = useState<File | null>(null);
+  const [splitPhotoPreview, setSplitPhotoPreview] = useState<string | null>(null);
+  const splitFileRef = useRef<HTMLInputElement>(null);
+  const [splitScore, setSplitScore] = useState<number | null>(null); // Score from backend
+  const [splitScoreLoading, setSplitScoreLoading] = useState(false);
+  // Split the G photo handler
+  const handleSplitPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSplitPhoto(file);
+    setSplitPhotoPreview(URL.createObjectURL(file));
+    setSplitScoreLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/splitg/score', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!res.ok) throw new Error('Failed to score image');
+      const data = await res.json();
+      setSplitScore(data.score ?? null);
+    } catch (err) {
+      setSplitScore(null);
+      toast.error('Could not analyze photo.');
+    } finally {
+      setSplitScoreLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!firebaseUser?.uid) return;
@@ -134,6 +165,11 @@ export function PintForm() {
   };
 
   const handleSave = async () => {
+    if (isDemo) {
+      toast('Sign up to log real pints!', { icon: '🍺' });
+      router.push('/login');
+      return;
+    }
     if (!firebaseUser) return;
     setSaving(true);
     try {
@@ -395,7 +431,53 @@ export function PintForm() {
           </motion.div>
         )}
 
-        {/* Step 4: Friends */}
+        {/* Step 4: Split the G Photo */}
+        {step === 'Split the G Photo' && (
+          <motion.div key="split-photo" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
+            <div>
+              <h2 className="font-display text-xl text-cream mb-1">Split the G</h2>
+              <p className="text-cream/40 font-mono text-xs">Snap a photo of your pint after your first sip. We'll analyze how well you split the G!</p>
+            </div>
+            {splitPhotoPreview ? (
+              <div className="relative rounded-xl overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={splitPhotoPreview} alt="Split the G" className="w-full h-48 object-cover" />
+                <button
+                  type="button"
+                  onClick={() => { setSplitPhoto(null); setSplitPhotoPreview(null); setSplitScore(null); }}
+                  className="absolute top-2 right-2 w-7 h-7 bg-black/70 rounded-full flex items-center justify-center text-cream hover:bg-black/90 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+                {splitScoreLoading ? (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-gold font-display text-xl">Analyzing…</div>
+                ) : splitScore !== null ? (
+                  <div className="absolute bottom-2 left-0 right-0 flex flex-col items-center">
+                    <span className="bg-black/80 text-gold px-4 py-2 rounded-full font-display text-2xl shadow-lg">{splitScore.toFixed(2)} / 5</span>
+                    <span className="text-cream/70 text-xs mt-1">(placeholder score)</span>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => splitFileRef.current?.click()}
+                className="w-full h-40 border-2 border-dashed border-gold/30 rounded-xl flex flex-col items-center justify-center gap-3 text-gold/60 hover:text-gold transition-colors"
+              >
+                <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" />
+                </svg>
+                <span className="font-mono text-xs">Tap to add Split the G photo</span>
+              </button>
+            )}
+            <input ref={splitFileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleSplitPhotoChange} />
+          </motion.div>
+        )}
+
+        {/* Step 5: Friends */}
         {step === 'Friends' && (
           <motion.div key="friends" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
             <div>

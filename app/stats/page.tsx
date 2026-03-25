@@ -12,13 +12,14 @@ import {
   Cell,
 } from 'recharts';
 import { useAuth } from '@/context/AuthContext';
-import { computeStats } from '@/lib/firestore';
+import { computeStats, getFriends } from '@/lib/firestore';
 import { AuthGuard } from '@/components/layout/AuthGuard';
 import { TopBar } from '@/components/layout/TopBar';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { StarRating } from '@/components/ui/StarRating';
 import { Skeleton } from '@/components/ui/Skeleton';
-import type { Stats } from '@/types';
+import { SplitLeaderboard } from '@/components/social/SplitLeaderboard';
+import type { Stats, User } from '@/types';
 
 function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
@@ -49,8 +50,9 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
 };
 
 export default function StatsPage() {
-  const { firebaseUser } = useAuth();
+  const { firebaseUser, userDoc } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
+  const [friends, setFriends] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -58,6 +60,7 @@ export default function StatsPage() {
     computeStats(firebaseUser.uid)
       .then(setStats)
       .finally(() => setLoading(false));
+    getFriends(firebaseUser.uid).then(setFriends).catch(() => {});
   }, [firebaseUser]);
 
   const dayData = stats
@@ -71,6 +74,13 @@ export default function StatsPage() {
     ? [1, 2, 3, 4, 5].map((r) => ({
         rating: `${r}★`,
         count: stats.ratingDistribution[r] ?? 0,
+      }))
+    : [];
+
+  const splitData = stats
+    ? ['0-20', '21-40', '41-60', '61-80', '81-100'].map((range) => ({
+        range,
+        count: stats.splitScoreDistribution[range] ?? 0,
       }))
     : [];
 
@@ -188,6 +198,76 @@ export default function StatsPage() {
                   </BarChart>
                 </ResponsiveContainer>
               </motion.div>
+
+              {/* Split the G section */}
+              {stats.totalSplits > 0 && (
+                <>
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.25 }}
+                    className="bg-gradient-to-r from-gold/10 to-transparent border border-gold/20 rounded-xl p-4"
+                  >
+                    <p className="font-mono text-gold/60 text-[10px] tracking-widest uppercase mb-3">Split the G</p>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="text-center">
+                        <p className="font-display text-2xl text-gold">{stats.totalSplits}</p>
+                        <p className="font-mono text-cream/40 text-[10px] mt-0.5">ATTEMPTS</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="font-display text-2xl text-gold">{stats.avgSplitScore?.toFixed(1) ?? '—'}</p>
+                        <p className="font-mono text-cream/40 text-[10px] mt-0.5">AVG SCORE</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="font-display text-2xl text-gold">{stats.bestSplitScore ?? '—'}</p>
+                        <p className="font-mono text-cream/40 text-[10px] mt-0.5">BEST</p>
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 }}
+                    className="bg-[#111] border border-white/5 rounded-xl p-4"
+                  >
+                    <h2 className="font-display text-cream text-base mb-4">Split Score Distribution</h2>
+                    <ResponsiveContainer width="100%" height={140}>
+                      <BarChart data={splitData} barSize={32}>
+                        <XAxis
+                          dataKey="range"
+                          tick={{ fill: 'rgba(245,240,232,0.4)', fontSize: 10, fontFamily: 'var(--font-mono)' }}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <YAxis hide />
+                        <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(201,168,76,0.05)' }} />
+                        <Bar dataKey="count" fill="rgba(201,168,76,0.5)" radius={[4, 4, 0, 0]}>
+                          {splitData.map((_, index) => (
+                            <Cell
+                              key={index}
+                              fill={index === 4 ? '#c9a84c' : `rgba(201,168,76,${0.2 + index * 0.15})`}
+                            />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </motion.div>
+                </>
+              )}
+
+              {/* Split Leaderboard */}
+              {stats.totalSplits > 0 && friends.length > 0 && userDoc && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.35 }}
+                  className="bg-[#111] border border-white/5 rounded-xl p-4"
+                >
+                  <h2 className="font-display text-cream text-base mb-4">Split Leaderboard</h2>
+                  <SplitLeaderboard currentUser={userDoc} friends={friends} />
+                </motion.div>
+              )}
 
               {/* Encouraging message */}
               <div className="text-center py-2">

@@ -92,6 +92,22 @@ export function PintCard({ pint: initialPint, uid, index = 0, onUpdated, friends
             </div>
           )}
 
+          {/* Split the G score */}
+          {pint.splitAttempted && pint.splitScore != null && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs">🎯</span>
+              <p className="font-mono text-cream/50 text-[10px]">Split the G:</p>
+              <span className={`font-display text-sm ${
+                pint.splitScore >= 95 ? 'text-gold' :
+                pint.splitScore >= 70 ? 'text-cream' :
+                'text-cream/50'
+              }`}>
+                {pint.splitScore}
+              </span>
+              <span className="font-mono text-cream/30 text-[10px]">/100</span>
+            </div>
+          )}
+
           {/* Tagged friends */}
           {taggedFriends.length > 0 && (
             <div className="flex items-center gap-1.5">

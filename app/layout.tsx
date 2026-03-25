@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Playfair_Display, Libre_Baskerville, DM_Mono } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
+import { DemoBanner } from '@/components/layout/DemoBanner';
 import { Toaster } from 'react-hot-toast';
 
 const playfair = Playfair_Display({
@@ -54,6 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="bg-black text-cream font-body antialiased">
         <AuthProvider>
           {children}
+          <DemoBanner />
           <Toaster
             position="top-center"
             toastOptions={{

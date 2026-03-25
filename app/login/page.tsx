@@ -7,11 +7,13 @@ import toast from 'react-hot-toast';
 import { HarpLogo } from '@/components/ui/HarpLogo';
 import { Button } from '@/components/ui/Button';
 import { signInWithEmail, signUpWithEmail, signInWithGoogle } from '@/lib/auth';
+import { useAuth } from '@/context/AuthContext';
 
 type Mode = 'gate' | 'signin' | 'signup';
 
 export default function LoginPage() {
   const router = useRouter();
+  const { enterDemo } = useAuth();
   const [mode, setMode] = useState<Mode>('gate');
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -204,6 +206,19 @@ export default function LoginPage() {
                     Create one
                   </button>
                 </p>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px bg-white/5" />
+                  <span className="text-cream/20 font-mono text-xs">or</span>
+                  <div className="flex-1 h-px bg-white/5" />
+                </div>
+
+                <button
+                  onClick={() => { enterDemo(); router.replace('/diary'); }}
+                  className="w-full text-center text-cream/30 hover:text-cream/50 transition-colors text-xs font-mono tracking-wide py-1"
+                >
+                  Just browsing? Try the demo
+                </button>
               </motion.div>
             )}
 
