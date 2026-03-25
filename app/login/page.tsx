@@ -13,7 +13,7 @@ type Mode = 'gate' | 'signin' | 'signup';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { enterDemo } = useAuth();
+  const { enterDemo, exitDemo } = useAuth();
   const [mode, setMode] = useState<Mode>('gate');
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -36,6 +36,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await signInWithEmail(email, password);
+      exitDemo();
       router.replace('/diary');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Sign in failed';
@@ -51,6 +52,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await signUpWithEmail(email, password, name);
+      exitDemo();
       router.replace('/diary');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Sign up failed';
@@ -68,6 +70,7 @@ export default function LoginPage() {
     setGoogleLoading(true);
     try {
       await signInWithGoogle();
+      exitDemo();
       router.replace('/diary');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Google sign in failed';
