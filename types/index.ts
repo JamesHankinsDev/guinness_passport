@@ -91,6 +91,51 @@ export interface PubStats {
   totalRating: number;
   pintCount: number;
   avgRating: number;
+  /**
+   * Whether this pub has passed the bar for organic trail generation
+   * (`pintCount >= 3 && avgRating >= 4.0`). Denormalised so the nightly
+   * Cloud Function can query pre-filtered. Treated as an optimisation
+   * hint — the function re-verifies eligibility before trusting it.
+   */
+  trailEligible?: boolean;
+  lastUpdated: Timestamp;
+}
+
+/**
+ * A single stop on a pilgrimage trail — one pub, denormalised from pubStats
+ * at the time the trail was built/updated.
+ */
+export interface PilgrimageStop {
+  order: number;
+  placeId: string;
+  pubName: string;
+  lat: number;
+  lng: number;
+  avgRating: number;
+  pintCount: number;
+}
+
+export type PilgrimageSource = 'curated' | 'organic';
+export type PilgrimageStatus = 'active' | 'inactive';
+
+/**
+ * A pilgrimage trail. `source: 'curated'` are hand-authored by us;
+ * `source: 'organic'` are generated nightly from real pint data by the
+ * generateOrganicTrails Cloud Function. Never hard-delete organic trails
+ * — dissolve them by setting status to 'inactive'.
+ */
+export interface Pilgrimage {
+  id: string;
+  clusterId: string;
+  source: PilgrimageSource;
+  status: PilgrimageStatus;
+  title: string;
+  stops: PilgrimageStop[];
+  totalStops: number;
+  minRating: number;
+  avgRating: number;
+  radiusMiles: number;
+  createdAt: Timestamp;
   lastUpdated: Timestamp;
 }
 

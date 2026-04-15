@@ -32,7 +32,7 @@ service cloud.firestore {
 
       allow update: if request.auth != null
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['totalRating','pintCount','avgRating','lastUpdated','pubName','lat','lng'])
+             .hasOnly(['totalRating','pintCount','avgRating','trailEligible','lastUpdated','pubName','lat','lng'])
         && request.resource.data.pintCount >= 0
         && (request.resource.data.pintCount - resource.data.pintCount) >= -1
         && (request.resource.data.pintCount - resource.data.pintCount) <= 1
@@ -41,6 +41,15 @@ service cloud.firestore {
         && request.resource.data.avgRating <= 5;
 
       allow delete: if false;
+    }
+
+    // Pilgrimage trails — curated (hand-authored) and organic (generated nightly
+    // by the generateOrganicTrails Cloud Function). All reads are public to
+    // authed users; all writes are blocked from clients because the Cloud
+    // Function runs with admin privileges and bypasses rules anyway.
+    match /pilgrimages/{pilgrimageId} {
+      allow read: if request.auth != null;
+      allow write: if false;
     }
 
     // Pints are readable by the owner OR by any of the owner's friends

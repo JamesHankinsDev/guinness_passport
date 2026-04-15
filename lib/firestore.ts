@@ -20,7 +20,16 @@ import {
   QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Pint, PubStats, User, PintFormData, Stats, BadgeId, Badge } from '@/types';
+import { haversineMiles } from './geo';
+import { Pilgrimage, Pint, PubStats, User, PintFormData, Stats, BadgeId, Badge } from '@/types';
+
+/**
+ * Thresholds for "trail eligible" — must match the constants in
+ * functions/src/generateOrganicTrails.ts. Kept duplicated (not shared)
+ * because the web app and Cloud Functions are separate TS projects.
+ */
+const TRAIL_MIN_PINT_COUNT = 3;
+const TRAIL_MIN_AVG_RATING = 4.0;
 
 // ─── User helpers ─────────────────────────────────────────────────────────────
 
@@ -80,6 +89,7 @@ async function adjustPubStats(params: {
     if (!snap.exists()) {
       // First pint at this pub — create the aggregate.
       if (countDelta !== 1) return; // edit/delete with no prior aggregate: nothing to do
+      const avg = round1(ratingDelta);
       tx.set(ref, {
         placeId,
         pubName,
@@ -87,7 +97,8 @@ async function adjustPubStats(params: {
         lng,
         totalRating: ratingDelta,
         pintCount: 1,
-        avgRating: round1(ratingDelta),
+        avgRating: avg,
+        trailEligible: 1 >= TRAIL_MIN_PINT_COUNT && avg >= TRAIL_MIN_AVG_RATING,
         lastUpdated: serverTimestamp(),
       });
       return;
@@ -103,21 +114,53 @@ async function adjustPubStats(params: {
         totalRating: 0,
         pintCount: 0,
         avgRating: 0,
+        trailEligible: false,
         lastUpdated: serverTimestamp(),
       });
       return;
     }
 
+    const newAvg = round1(newTotal / newCount);
     tx.update(ref, {
       pubName, // refresh in case Place rename
       lat,
       lng,
       totalRating: newTotal,
       pintCount: newCount,
-      avgRating: round1(newTotal / newCount),
+      avgRating: newAvg,
+      trailEligible: newCount >= TRAIL_MIN_PINT_COUNT && newAvg >= TRAIL_MIN_AVG_RATING,
       lastUpdated: serverTimestamp(),
     });
   });
+}
+
+/**
+ * Client-side geo filter for organic pilgrimage trails. Firestore has no
+ * native "within X miles" query so we fetch every active organic trail once
+ * and haversine-filter in memory. Fine while the count is small; revisit
+ * with a geohash index if the collection grows past a few thousand.
+ */
+export async function getNearbyOrganicTrails({
+  lat,
+  lng,
+  radiusMiles,
+}: {
+  lat: number;
+  lng: number;
+  radiusMiles: number;
+}): Promise<Pilgrimage[]> {
+  const q = query(
+    collection(db, 'pilgrimages'),
+    where('source', '==', 'organic'),
+    where('status', '==', 'active')
+  );
+  const snap = await getDocs(q);
+  const trails = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pilgrimage));
+  return trails.filter((trail) =>
+    trail.stops.some(
+      (stop) => haversineMiles(lat, lng, stop.lat, stop.lng) <= radiusMiles
+    )
+  );
 }
 
 /** Fetches all pub aggregates with enough samples to appear on the heatmap. */
