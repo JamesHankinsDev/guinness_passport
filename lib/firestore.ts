@@ -15,11 +15,12 @@ import {
   serverTimestamp,
   increment,
   arrayUnion,
+  runTransaction,
   DocumentSnapshot,
   QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Pint, User, PintFormData, Stats, BadgeId, Badge } from '@/types';
+import { Pint, PubStats, User, PintFormData, Stats, BadgeId, Badge } from '@/types';
 
 // ─── User helpers ─────────────────────────────────────────────────────────────
 
@@ -48,6 +49,85 @@ export async function getUserDoc(uid: string): Promise<User | null> {
 
 export async function updateUserDoc(uid: string, data: Partial<User>) {
   await updateDoc(doc(db, 'users', uid), data as Record<string, unknown>);
+}
+
+// ─── Pub aggregate stats (anonymised, publicly readable) ─────────────────────
+
+/** Rounds to 1 decimal place, matching the convention used for user.avgRating. */
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+/**
+ * Incrementally updates the anonymised pubStats doc for a place when a pint is
+ * added, edited, or deleted. `countDelta` is +1/0/-1 and `ratingDelta` is the
+ * change in summed rating. Fail-safe: callers should not block user flows on it.
+ */
+async function adjustPubStats(params: {
+  placeId: string;
+  pubName: string;
+  lat: number;
+  lng: number;
+  countDelta: 1 | 0 | -1;
+  ratingDelta: number;
+}) {
+  const { placeId, pubName, lat, lng, countDelta, ratingDelta } = params;
+  if (!placeId) return; // pints without a valid Google Places ID aren't aggregated
+
+  const ref = doc(db, 'pubStats', placeId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) {
+      // First pint at this pub — create the aggregate.
+      if (countDelta !== 1) return; // edit/delete with no prior aggregate: nothing to do
+      tx.set(ref, {
+        placeId,
+        pubName,
+        lat,
+        lng,
+        totalRating: ratingDelta,
+        pintCount: 1,
+        avgRating: round1(ratingDelta),
+        lastUpdated: serverTimestamp(),
+      });
+      return;
+    }
+
+    const data = snap.data() as PubStats;
+    const newCount = Math.max(0, data.pintCount + countDelta);
+    const newTotal = Math.max(0, data.totalRating + ratingDelta);
+
+    if (newCount === 0) {
+      // Last pint at this pub removed — zero out the aggregate (can't delete under current rules).
+      tx.update(ref, {
+        totalRating: 0,
+        pintCount: 0,
+        avgRating: 0,
+        lastUpdated: serverTimestamp(),
+      });
+      return;
+    }
+
+    tx.update(ref, {
+      pubName, // refresh in case Place rename
+      lat,
+      lng,
+      totalRating: newTotal,
+      pintCount: newCount,
+      avgRating: round1(newTotal / newCount),
+      lastUpdated: serverTimestamp(),
+    });
+  });
+}
+
+/** Fetches all pub aggregates with enough samples to appear on the heatmap. */
+export async function getHeatmapPubStats(minPintCount = 3): Promise<PubStats[]> {
+  const q = query(
+    collection(db, 'pubStats'),
+    where('pintCount', '>=', minPintCount)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ placeId: d.id, ...d.data() } as PubStats));
 }
 
 // ─── Pint helpers ─────────────────────────────────────────────────────────────
@@ -127,6 +207,20 @@ export async function addPint(
     }
   }
 
+  // Update anonymised pub aggregate — fail-safe, never blocks the pint log.
+  try {
+    await adjustPubStats({
+      placeId: formData.placeId,
+      pubName: formData.pubName,
+      lat: formData.lat,
+      lng: formData.lng,
+      countDelta: 1,
+      ratingDelta: formData.rating,
+    });
+  } catch (err) {
+    console.warn('pubStats update failed (non-fatal):', err);
+  }
+
   // Award pint-related badges if friends were tagged
   if (hasFriends) {
     const freshSnap = await getDoc(userRef);
@@ -199,6 +293,7 @@ export async function updatePint(pintId: string, uid: string, fields: PintEditFi
   }
 
   const oldRating = pintSnap.data().rating as number;
+  const oldPlaceId = pintSnap.data().placeId as string | undefined;
   await updateDoc(pintRef, fields as unknown as Record<string, unknown>);
 
   // Re-compute avgRating on the user doc if rating changed
@@ -213,6 +308,41 @@ export async function updatePint(pintId: string, uid: string, fields: PintEditFi
       });
     }
   }
+
+  // Update anonymised pub aggregate for this edit (fail-safe).
+  try {
+    if (oldPlaceId && oldPlaceId !== fields.placeId) {
+      // Pub changed entirely — remove the old pint from the old pub, add to the new.
+      await adjustPubStats({
+        placeId: oldPlaceId,
+        pubName: pintSnap.data().pubName,
+        lat: pintSnap.data().lat,
+        lng: pintSnap.data().lng,
+        countDelta: -1,
+        ratingDelta: -oldRating,
+      });
+      await adjustPubStats({
+        placeId: fields.placeId,
+        pubName: fields.pubName,
+        lat: fields.lat,
+        lng: fields.lng,
+        countDelta: 1,
+        ratingDelta: fields.rating,
+      });
+    } else if (oldRating !== fields.rating) {
+      // Same pub, rating changed — adjust the running total only.
+      await adjustPubStats({
+        placeId: fields.placeId,
+        pubName: fields.pubName,
+        lat: fields.lat,
+        lng: fields.lng,
+        countDelta: 0,
+        ratingDelta: fields.rating - oldRating,
+      });
+    }
+  } catch (err) {
+    console.warn('pubStats update failed (non-fatal):', err);
+  }
 }
 
 export async function deletePint(pintId: string, uid: string) {
@@ -221,12 +351,27 @@ export async function deletePint(pintId: string, uid: string) {
   if (!pintSnap.exists() || pintSnap.data().userId !== uid) {
     throw new Error('Unauthorized');
   }
+  const pintData = pintSnap.data() as Pint;
   await deleteDoc(pintRef);
 
   // Decrement stats (simplified)
   await updateDoc(doc(db, 'users', uid), {
     totalPints: increment(-1),
   });
+
+  // Update anonymised pub aggregate (fail-safe).
+  try {
+    await adjustPubStats({
+      placeId: pintData.placeId,
+      pubName: pintData.pubName,
+      lat: pintData.lat,
+      lng: pintData.lng,
+      countDelta: -1,
+      ratingDelta: -pintData.rating,
+    });
+  } catch (err) {
+    console.warn('pubStats update failed (non-fatal):', err);
+  }
 }
 
 export async function computeStats(uid: string): Promise<Stats> {

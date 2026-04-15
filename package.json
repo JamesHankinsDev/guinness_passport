@@ -23,10 +23,12 @@
     "recharts": "^3.7.0"
   },
   "devDependencies": {
+    "@opentelemetry/api": "^1.9.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "firebase-admin": "^13.8.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

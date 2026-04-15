@@ -77,6 +77,23 @@ export interface PintFormData {
   splitAttempted?: boolean;
 }
 
+/**
+ * Anonymized per-pub aggregate stats, publicly readable. Built by incremental
+ * client-side writes from addPint/updatePint/deletePint. Contains no userIds,
+ * notes, photos, or timestamps tied to specific people — only counts and averages.
+ */
+export interface PubStats {
+  placeId: string;
+  pubName: string;
+  lat: number;
+  lng: number;
+  /** Sum of all ratings ever logged at this pub (used for incremental avg updates). */
+  totalRating: number;
+  pintCount: number;
+  avgRating: number;
+  lastUpdated: Timestamp;
+}
+
 export interface Stats {
   totalPints: number;
   uniquePubs: number;

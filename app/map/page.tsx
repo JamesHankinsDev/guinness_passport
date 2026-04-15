@@ -3,21 +3,24 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
-import { getAllPints, getAllFriendsPints, getFriends } from '@/lib/firestore';
+import { getAllPints, getAllFriendsPints, getFriends, getHeatmapPubStats } from '@/lib/firestore';
 import { AuthGuard } from '@/components/layout/AuthGuard';
 import { TopBar } from '@/components/layout/TopBar';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { PintMap } from '@/components/pint/PintMap';
+import { PubHeatmap } from '@/components/pint/PubHeatmap';
 import { StarRating } from '@/components/ui/StarRating';
 import { TagPill } from '@/components/ui/TagPill';
-import type { Pint, User } from '@/types';
+import type { Pint, PubStats, User } from '@/types';
 
-type MapTab = 'mine' | 'friends';
+type MapTab = 'mine' | 'friends' | 'heatmap';
 
 export default function MapPage() {
   const { firebaseUser, userDoc } = useAuth();
   const [myPints, setMyPints] = useState<Pint[]>([]);
   const [friendsPints, setFriendsPints] = useState<Pint[]>([]);
+  const [heatmapPubs, setHeatmapPubs] = useState<PubStats[]>([]);
+  const [heatmapLoaded, setHeatmapLoaded] = useState(false);
   const [friends, setFriends] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Pint | null>(null);
@@ -48,9 +51,25 @@ export default function MapPage() {
       .finally(() => setLoading(false));
   }, [tab, sharingFriends, friendsPints.length]);
 
+  // Load the anonymised heatmap aggregates lazily, once.
+  useEffect(() => {
+    if (tab !== 'heatmap' || heatmapLoaded) return;
+    setLoading(true);
+    getHeatmapPubStats(3)
+      .then((pubs) => {
+        setHeatmapPubs(pubs);
+        setHeatmapLoaded(true);
+      })
+      .catch(() => setHeatmapLoaded(true))
+      .finally(() => setLoading(false));
+  }, [tab, heatmapLoaded]);
+
   const hasFriends = (userDoc?.friendIds?.length ?? 0) > 0;
-  const activePints = tab === 'mine' ? myPints : friendsPints;
+  const activePints = tab === 'mine' ? myPints : tab === 'friends' ? friendsPints : [];
   const friendsMap = Object.fromEntries(friends.map((f) => [f.uid, f.displayName]));
+
+  // The heatmap tab is always available; friends tab only when you have friends.
+  const availableTabs: MapTab[] = hasFriends ? ['mine', 'friends', 'heatmap'] : ['mine', 'heatmap'];
 
   return (
     <AuthGuard>
@@ -62,6 +81,8 @@ export default function MapPage() {
             <div className="w-full h-full bg-[#111] flex items-center justify-center">
               <div className="w-8 h-8 border-2 border-gold/30 border-t-gold rounded-full animate-spin" />
             </div>
+          ) : tab === 'heatmap' ? (
+            <PubHeatmap key="heatmap" pubs={heatmapPubs} />
           ) : (
             <PintMap
               key={tab}
@@ -71,32 +92,33 @@ export default function MapPage() {
             />
           )}
 
-          {/* Pint count + optional filter toggle */}
+          {/* Count badge + layer toggle */}
           <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
             <div className="bg-black/80 backdrop-blur border border-white/10 rounded-full px-3 py-1.5 flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full animate-pulse ${tab === 'friends' ? 'bg-cream/60' : 'bg-gold'}`} />
+              <div className={`w-2 h-2 rounded-full animate-pulse ${
+                tab === 'heatmap' ? 'bg-gold' : tab === 'friends' ? 'bg-cream/60' : 'bg-gold'
+              }`} />
               <span className="font-mono text-cream/70 text-xs">
-                {activePints.length} pint{activePints.length !== 1 ? 's' : ''}
-                {tab === 'friends' ? ' from friends' : ' logged'}
+                {tab === 'heatmap'
+                  ? `${heatmapPubs.length} pub${heatmapPubs.length !== 1 ? 's' : ''} worldwide`
+                  : `${activePints.length} pint${activePints.length !== 1 ? 's' : ''}${tab === 'friends' ? ' from friends' : ' logged'}`}
               </span>
             </div>
 
-            {hasFriends && (
-              <div className="flex gap-1 bg-black/80 backdrop-blur border border-white/10 rounded-full p-1">
-                {(['mine', 'friends'] as MapTab[]).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => { setSelected(null); setTab(t); }}
-                    className={`px-3 py-1 rounded-full font-mono text-[10px] tracking-wide transition-colors ${
-                      tab === t ? 'bg-gold text-black' : 'text-cream/50 hover:text-cream/70'
-                    }`}
-                  >
-                    {t === 'mine' ? 'Mine' : 'Friends'}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="flex gap-1 bg-black/80 backdrop-blur border border-white/10 rounded-full p-1">
+              {availableTabs.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => { setSelected(null); setTab(t); }}
+                  className={`px-3 py-1 rounded-full font-mono text-[10px] tracking-wide transition-colors ${
+                    tab === t ? 'bg-gold text-black' : 'text-cream/50 hover:text-cream/70'
+                  }`}
+                >
+                  {t === 'mine' ? 'Mine' : t === 'friends' ? 'Friends' : 'Heatmap'}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Selected pint card */}
