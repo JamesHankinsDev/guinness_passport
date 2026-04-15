@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/Button';
 import { PintCardSkeleton } from '@/components/ui/Skeleton';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 
-type FeedTab = 'mine' | 'friends';
+type FeedTab = 'all' | 'mine' | 'friends';
 
 function StatsStrip({ total, pubs, avg }: { total: number; pubs: number; avg: number }) {
   return (
@@ -43,7 +43,7 @@ export default function DiaryPage() {
   const uid = firebaseUser?.uid;
   const { pints, loading, hasMore, loadMore, refresh, updateOptimistic } = usePints(uid);
 
-  const [tab, setTab] = useState<FeedTab>('mine');
+  const [tab, setTab] = useState<FeedTab>('all');
   const [friends, setFriends] = useState<User[]>([]);
   const [friendsPints, setFriendsPints] = useState<Pint[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(false);
@@ -61,11 +61,14 @@ export default function DiaryPage() {
     getFriends(uid).then(setFriends).catch(() => {});
   }, [uid, userDoc?.friendIds?.length]);
 
+  // Only friends who've opted in to sharing contribute pints to the feed.
+  const sharingFriends = friends.filter((f) => f.shareWithFriends !== false);
+
   const loadFriendsPints = useCallback(async (reset = false) => {
-    if (!uid || friends.length === 0) return;
+    if (!uid || sharingFriends.length === 0) return;
     setFriendsLoading(true);
     try {
-      const friendIds = friends.map((f) => f.uid);
+      const friendIds = sharingFriends.map((f) => f.uid);
       const cursor = reset ? undefined : (friendsLastDoc ?? undefined);
       const result = await getFriendsPints(friendIds, 10, cursor);
       setFriendsPints((prev) => reset ? result.pints : [...prev, ...result.pints]);
@@ -75,15 +78,15 @@ export default function DiaryPage() {
       setFriendsLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uid, friends, friendsLastDoc]);
+  }, [uid, sharingFriends, friendsLastDoc]);
 
-  // When switching to friends tab, load their pints if not yet loaded
+  // Load friends' pints once we know who's sharing — powers both 'all' and 'friends' tabs.
   useEffect(() => {
-    if (tab === 'friends' && friendsPints.length === 0 && friends.length > 0) {
+    if (sharingFriends.length > 0 && friendsPints.length === 0) {
       loadFriendsPints(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, friends]);
+  }, [sharingFriends.length]);
 
   // Unique pubs count
   const uniquePubs = new Set(pints.map((p) => p.pubName)).size;
@@ -92,6 +95,11 @@ export default function DiaryPage() {
   const friendsMap = Object.fromEntries(friends.map((f) => [f.uid, f.displayName]));
 
   const hasFriends = (userDoc?.friendIds?.length ?? 0) > 0;
+
+  // Merged, chronologically-sorted feed for the 'All' tab.
+  const mergedPints = [...pints, ...friendsPints].sort(
+    (a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0)
+  );
 
   return (
     <AuthGuard>
@@ -130,7 +138,7 @@ export default function DiaryPage() {
           {/* Feed toggle */}
           {hasFriends && (
             <div className="flex gap-1 mb-5 bg-white/5 rounded-xl p-1">
-              {(['mine', 'friends'] as FeedTab[]).map((t) => (
+              {(['all', 'mine', 'friends'] as FeedTab[]).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -141,10 +149,48 @@ export default function DiaryPage() {
                       : 'text-cream/50 hover:text-cream/70'
                   }`}
                 >
-                  {t === 'mine' ? 'My Pints' : "Friends'"}
+                  {t === 'all' ? 'All' : t === 'mine' ? 'Mine' : "Friends'"}
                 </button>
               ))}
             </div>
+          )}
+
+          {/* Combined feed — own + friends, merged chronologically */}
+          {tab === 'all' && (
+            <>
+              {loading && pints.length === 0 && friendsPints.length === 0 ? (
+                <div className="space-y-4">
+                  {[...Array(3)].map((_, i) => <PintCardSkeleton key={i} />)}
+                </div>
+              ) : mergedPints.length === 0 ? (
+                <EmptyState />
+              ) : (
+                <div className="space-y-4">
+                  {mergedPints.map((pint, i) => {
+                    const isMine = pint.userId === uid;
+                    return (
+                      <PintCard
+                        key={pint.id}
+                        pint={pint}
+                        uid={isMine ? uid : undefined}
+                        index={i}
+                        friendsMap={friendsMap}
+                        variant={isMine ? 'mine' : 'friend'}
+                        onUpdated={isMine ? (updated: Pint) => updateOptimistic(updated) : undefined}
+                      />
+                    );
+                  })}
+
+                  {hasMore && (
+                    <div className="flex justify-center pt-4">
+                      <Button variant="secondary" size="md" loading={loading} onClick={loadMore}>
+                        Load more of mine
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
 
           {/* My Pints feed */}
@@ -205,14 +251,13 @@ export default function DiaryPage() {
               ) : (
                 <div className="space-y-4">
                   {friendsPints.map((pint, i) => (
-                    <div key={pint.id}>
-                      {friendsMap[pint.userId] && (
-                        <p className="font-mono text-cream/30 text-[10px] tracking-wide mb-1.5 px-1">
-                          {friendsMap[pint.userId]}
-                        </p>
-                      )}
-                      <PintCard pint={pint} index={i} friendsMap={friendsMap} />
-                    </div>
+                    <PintCard
+                      key={pint.id}
+                      pint={pint}
+                      index={i}
+                      friendsMap={friendsMap}
+                      variant="friend"
+                    />
                   ))}
 
                   {friendsHasMore && (

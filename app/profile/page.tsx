@@ -22,6 +22,9 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [displayName, setDisplayName] = useState(userDoc?.displayName ?? '');
   const [homePub, setHomePub] = useState(userDoc?.homePub ?? '');
+  const [sharingWithFriends, setSharingWithFriends] = useState(
+    userDoc?.shareWithFriends !== false
+  );
   const [loggingOut, setLoggingOut] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [friends, setFriends] = useState<User[]>([]);
@@ -39,7 +42,11 @@ export default function ProfilePage() {
     if (!firebaseUser) return;
     setSaving(true);
     try {
-      await updateUserDoc(firebaseUser.uid, { displayName, homePub });
+      await updateUserDoc(firebaseUser.uid, {
+        displayName,
+        homePub,
+        shareWithFriends: sharingWithFriends,
+      });
       await refreshUserDoc();
       toast.success('Profile updated');
     } catch {
@@ -179,6 +186,40 @@ export default function ProfilePage() {
                 </button>
               </div>
             )}
+          </div>
+
+          {/* Settings */}
+          <div className="bg-[#111] border border-white/5 rounded-xl p-5 space-y-4 mb-4">
+            <h2 className="font-display text-cream text-base">Settings</h2>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={sharingWithFriends}
+              onClick={() => setSharingWithFriends((v) => !v)}
+              className="w-full flex items-center justify-between gap-4 text-left group"
+            >
+              <div className="min-w-0">
+                <p className="font-mono text-cream text-sm">Share pints with friends</p>
+                <p className="font-mono text-cream/40 text-[11px] mt-0.5">
+                  {sharingWithFriends
+                    ? 'Friends can see your pints on their map'
+                    : 'Your pints stay private'}
+                </p>
+              </div>
+              <span
+                className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border transition-colors ${
+                  sharingWithFriends
+                    ? 'bg-gold/80 border-gold'
+                    : 'bg-white/5 border-white/10'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-black transition-transform ${
+                    sharingWithFriends ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </span>
+            </button>
           </div>
 
           {/* Edit form */}

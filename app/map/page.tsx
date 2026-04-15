@@ -35,15 +35,18 @@ export default function MapPage() {
     getFriends(firebaseUser.uid).then(setFriends).catch(() => {});
   }, [firebaseUser?.uid, userDoc?.friendIds?.length]);
 
+  // Only friends who've opted in to sharing are visible on the map.
+  const sharingFriends = friends.filter((f) => f.shareWithFriends !== false);
+
   // Load friends pints lazily when tab switches
   useEffect(() => {
-    if (tab !== 'friends' || friends.length === 0 || friendsPints.length > 0) return;
+    if (tab !== 'friends' || sharingFriends.length === 0 || friendsPints.length > 0) return;
     setLoading(true);
-    const friendIds = friends.map((f) => f.uid);
+    const friendIds = sharingFriends.map((f) => f.uid);
     getAllFriendsPints(friendIds)
       .then(setFriendsPints)
       .finally(() => setLoading(false));
-  }, [tab, friends, friendsPints.length]);
+  }, [tab, sharingFriends, friendsPints.length]);
 
   const hasFriends = (userDoc?.friendIds?.length ?? 0) > 0;
   const activePints = tab === 'mine' ? myPints : friendsPints;

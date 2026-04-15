@@ -11,6 +11,7 @@ export interface User {
   photoURL?: string;
   friendIds?: string[];
   badges?: Badge[];
+  shareWithFriends?: boolean;
   socialPints?: number;
   totalSplits?: number;
   avgSplitScore?: number;

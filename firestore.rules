@@ -16,11 +16,15 @@ service cloud.firestore {
         && request.auth.uid in request.resource.data.friendIds;
     }
 
-    // Pints are readable by the owner OR by any of the owner's friends.
+    // Pints are readable by the owner OR by any of the owner's friends
+    // (but only when the owner has opted in to sharing with friends).
     match /pints/{pintId} {
       allow read: if request.auth != null && (
         resource.data.userId == request.auth.uid ||
-        request.auth.uid in get(/databases/$(database)/documents/users/$(resource.data.userId)).data.get('friendIds', [])
+        (
+          request.auth.uid in get(/databases/$(database)/documents/users/$(resource.data.userId)).data.get('friendIds', []) &&
+          get(/databases/$(database)/documents/users/$(resource.data.userId)).data.get('shareWithFriends', true) == true
+        )
       );
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
       allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;

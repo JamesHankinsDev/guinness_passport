@@ -13,6 +13,8 @@ interface PintCardProps {
   index?: number;
   onUpdated?: (updated: Pint) => void;
   friendsMap?: Record<string, string>; // uid → displayName
+  /** 'mine' (default) is the normal styling; 'friend' tints the card to mark it as a friend's pint. */
+  variant?: 'mine' | 'friend';
 }
 
 function formatDate(pint: Pint): string {
@@ -26,7 +28,7 @@ function formatDate(pint: Pint): string {
   }).format(date);
 }
 
-export function PintCard({ pint: initialPint, uid, index = 0, onUpdated, friendsMap = {} }: PintCardProps) {
+export function PintCard({ pint: initialPint, uid, index = 0, onUpdated, friendsMap = {}, variant = 'mine' }: PintCardProps) {
   const [pint, setPint] = useState(initialPint);
   const [editOpen, setEditOpen] = useState(false);
 
@@ -39,14 +41,31 @@ export function PintCard({ pint: initialPint, uid, index = 0, onUpdated, friends
     .map((id) => friendsMap[id])
     .filter(Boolean) as string[];
 
+  const isFriend = variant === 'friend';
+  const posterName = isFriend ? friendsMap[pint.userId] : null;
+
   return (
     <>
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, delay: index * 0.06 }}
-        className="bg-[#111] border border-white/5 rounded-xl overflow-hidden hover:border-gold/15 transition-colors group"
+        className={`rounded-xl overflow-hidden transition-colors group ${
+          isFriend
+            ? 'bg-cream/2 border border-cream/15 border-l-[3px] border-l-cream/50 hover:border-cream/25'
+            : 'bg-[#111] border border-white/5 hover:border-gold/15'
+        }`}
       >
+        {isFriend && posterName && (
+          <div className="px-5 pt-3 pb-0 flex items-center gap-1.5">
+            <svg className="w-3 h-3 text-cream/50 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+            </svg>
+            <p className="font-mono text-cream/50 text-[10px] tracking-widest uppercase">
+              {posterName}&apos;s pint
+            </p>
+          </div>
+        )}
         {pint.photoUrl && (
           <div className="h-40 overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}

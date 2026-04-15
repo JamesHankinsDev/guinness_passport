@@ -31,6 +31,7 @@ export async function createUserDoc(uid: string, data: Partial<User>) {
     socialPints: 0,
     friendIds: [],
     badges: [],
+    shareWithFriends: true,
     totalSplits: 0,
     avgSplitScore: 0,
     bestSplitScore: 0,
