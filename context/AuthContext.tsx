@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
-import { getUserDoc } from '@/lib/firestore';
+import { createUserDoc, getUserDoc } from '@/lib/firestore';
 import { User } from '@/types';
 import { DEMO_UID, DEMO_USER } from '@/lib/demoData';
 
@@ -72,11 +72,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Fetch the Firestore user doc in the background
       getUserDoc(user.uid)
-        .then((doc) => {
+        .then(async (doc) => {
+          if (!doc) {
+            // Self-heal: if the user is authenticated but has no Firestore doc
+            // (e.g. their original createUserDoc on first sign-in failed), create
+            // one now from their Firebase Auth profile.
+            await createUserDoc(user.uid, {
+              displayName: user.displayName ?? 'Guinness Drinker',
+              email: user.email ?? '',
+              uid: user.uid,
+              photoURL: user.photoURL ?? undefined,
+            });
+            const fresh = await getUserDoc(user.uid);
+            setUserDoc(fresh);
+            return;
+          }
+
           setUserDoc(doc);
           // Sync photoURL from Firebase Auth into Firestore if it's missing
           // (Google OAuth users who signed up before photoURL was stored)
-          if (doc && !doc.photoURL && user.photoURL) {
+          if (!doc.photoURL && user.photoURL) {
             import('@/lib/firestore').then(({ updateUserDoc }) => {
               updateUserDoc(user.uid, { photoURL: user.photoURL! }).catch(() => {});
             });
