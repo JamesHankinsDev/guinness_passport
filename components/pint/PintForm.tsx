@@ -43,14 +43,17 @@ export function PintForm() {
   const [splitPhoto, setSplitPhoto] = useState<File | null>(null);
   const [splitPhotoPreview, setSplitPhotoPreview] = useState<string | null>(null);
   const splitFileRef = useRef<HTMLInputElement>(null);
-  const [splitScore, setSplitScore] = useState<number | null>(null); // Score from backend
+  const [splitScore, setSplitScore] = useState<number | null>(null);
+  const [splitReason, setSplitReason] = useState<string | null>(null);
   const [splitScoreLoading, setSplitScoreLoading] = useState(false);
-  // Split the G photo handler
+
   const handleSplitPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setSplitPhoto(file);
     setSplitPhotoPreview(URL.createObjectURL(file));
+    setSplitScore(null);
+    setSplitReason(null);
     setSplitScoreLoading(true);
     try {
       const formData = new FormData();
@@ -61,9 +64,15 @@ export function PintForm() {
       });
       if (!res.ok) throw new Error('Failed to score image');
       const data = await res.json();
-      setSplitScore(data.score ?? null);
-    } catch (err) {
+      const score = typeof data.score === 'number' ? data.score : null;
+      setSplitScore(score);
+      setSplitReason(typeof data.reason === 'string' ? data.reason : null);
+      if (score !== null) {
+        setForm((f) => ({ ...f, splitAttempted: true, splitScore: score }));
+      }
+    } catch {
       setSplitScore(null);
+      setSplitReason(null);
       toast.error('Could not analyze photo.');
     } finally {
       setSplitScoreLoading(false);
@@ -444,7 +453,13 @@ export function PintForm() {
                 <img src={splitPhotoPreview} alt="Split the G" className="w-full h-48 object-cover" />
                 <button
                   type="button"
-                  onClick={() => { setSplitPhoto(null); setSplitPhotoPreview(null); setSplitScore(null); }}
+                  onClick={() => {
+                    setSplitPhoto(null);
+                    setSplitPhotoPreview(null);
+                    setSplitScore(null);
+                    setSplitReason(null);
+                    setForm((f) => ({ ...f, splitAttempted: false, splitScore: undefined }));
+                  }}
                   className="absolute top-2 right-2 w-7 h-7 bg-black/70 rounded-full flex items-center justify-center text-cream hover:bg-black/90 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -454,9 +469,11 @@ export function PintForm() {
                 {splitScoreLoading ? (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-gold font-display text-xl">Analyzing…</div>
                 ) : splitScore !== null ? (
-                  <div className="absolute bottom-2 left-0 right-0 flex flex-col items-center">
-                    <span className="bg-black/80 text-gold px-4 py-2 rounded-full font-display text-2xl shadow-lg">{splitScore.toFixed(2)} / 5</span>
-                    <span className="text-cream/70 text-xs mt-1">(placeholder score)</span>
+                  <div className="absolute bottom-2 left-2 right-2 flex flex-col items-center">
+                    <span className="bg-black/80 text-gold px-4 py-2 rounded-full font-display text-2xl shadow-lg">{splitScore} / 100</span>
+                    {splitReason && (
+                      <span className="text-cream/80 text-xs mt-1.5 text-center bg-black/70 px-3 py-1 rounded-full max-w-full">{splitReason}</span>
+                    )}
                   </div>
                 ) : null}
               </div>
